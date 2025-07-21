@@ -8,7 +8,7 @@
 3. 视频 Range 流式播放（支持拖动 / 极速加载）。
 """
 
-import os, shutil, hashlib, mimetypes, io
+import os, shutil, hashlib, mimetypes, io, zipfile
 from datetime import datetime
 from flask import (
     Flask, request, render_template_string, abort, flash, send_file, Response, redirect, url_for, jsonify
@@ -130,7 +130,9 @@ ALBUM = """<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>
 <style>
 :root{--gap:12px;--card-bg:#fff;--primary:#1976d2;--radius:8px;}
 *{box-sizing:border-box;}body{font-family:system-ui,Arial,sans-serif;margin:0;padding:var(--gap);background:#fafafa;}
-#upload{background:var(--card-bg);padding:var(--gap);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.1);}button{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;margin-right:.5rem;}button:disabled{opacity:.4;}
+#upload{background:var(--card-bg);padding:var(--gap);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.1);}
+button,.btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;margin-right:.5rem;text-decoration:none;display:inline-block;cursor:pointer;}
+button:disabled{opacity:.4;}
 #progwrap{display:none;height:20px;background:#e0e0e0;border-radius:10px;margin-top:6px;overflow:hidden;}#progbar{height:100%;width:0;background:#4caf50;transition:width .2s;}#progtext{font-size:.85rem;margin-top:4px;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--gap);margin-top:var(--gap);}figure{margin:0;padding:var(--gap);background:var(--card-bg);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;}
 figure img,figure video{width:100%;border-radius:4px;cursor:pointer;}figcaption{margin-top:4px;font-size:.8rem;word-break:break-all;text-align:center;}
@@ -138,15 +140,15 @@ figure img,figure video{width:100%;border-radius:4px;cursor:pointer;}figcaption{
 </style></head><body>
 <h2>{{ album }}</h2>
 <div id='upload'><input type='file' id='files' multiple>
-<button id='btnup' onclick='upload()'>上传</button>
-<button onclick='delAll()'>清空相册</button>
-<a href='{{ url_for('download_all', album_name=album) }}'>打包下载</a>
+<button id='btnup' class='btn' onclick='upload()'>上传</button>
+<button class='btn' onclick='delAll()'>清空相册</button>
+<a id='btnpack' class='btn' href='javascript:void(0)' onclick='pack()'>打包下载</a>
 <div id='progwrap'><div id='progbar'></div></div><div id='progtext'></div></div>
 {% with m=get_flashed_messages() %}{% if m %}<ul>{% for x in m %}<li style='color:#d32f2f;'>{{ x }}</li>{% endfor %}</ul>{% endif %}{% endwith %}
 <div class='grid'>
-{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('stream', album_name=album, filename=f) }}' onclick='showVideo(this)'>{% elif ext in ['dng','raw','nef','cr2','arw','rw2'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('preview', album_name=album, filename=f) }}' onclick='showImage(this)'>{% else %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('static', filename=album+'/'+f) }}' onclick='showImage(this)'>{% endif %}
+{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}<video src='{{ url_for('stream', album_name=album, filename=f) }}#t=0.1' data-full='{{ url_for('stream', album_name=album, filename=f) }}' preload='metadata' muted onclick='showVideo(this)'></video>{% elif ext in ['dng','raw','nef','cr2','arw','rw2'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('preview', album_name=album, filename=f) }}' onclick='showImage(this)'>{% else %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('static', filename=album+'/'+f) }}' onclick='showImage(this)'>{% endif %}
 <figcaption>{{ f }}</figcaption>
-<div><a href='{{ url_for('download_file_get', album_name=album, filename=f) }}'>下载</a> <button onclick="delFile('{{ f }}')">删除</button></div>
+<div><a class='btn' href='{{ url_for('download_file_get', album_name=album, filename=f) }}'>下载</a> <button class='btn' onclick="delFile('{{ f }}')">删除</button></div>
 </figure>{% endfor %}
 </div>
 <div id='overlay' onclick='hide()'><img><video controls style='display:none'></video></div>
@@ -157,6 +159,7 @@ async function upload(){const fs=[...document.getElementById('files').files];if(
  for(const f of fs)await doOne(f);location.reload();}
 function delFile(name){if(!confirm('删除 '+name+' ?'))return;fetch(location.pathname+'/delete', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:name})}).then(()=>location.reload());}
 function delAll(){if(!confirm('确定清空相册?'))return;fetch(location.pathname+'/delete_all',{method:'POST'}).then(()=>location.reload());}
+function pack(){const es=new EventSource(location.pathname+'/pack');pw.style.display='block';pb.style.width='0';pt.textContent='';es.onmessage=e=>{if(e.data==='done'){es.close();location.href=location.pathname+'/download_all';}else{pb.style.width=(parseFloat(e.data)*100).toFixed(1)+'%';pt.textContent='打包 '+(parseFloat(e.data)*100).toFixed(0)+'%';}};}
 function showImage(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');v.pause();v.style.display='none';v.src='';img.style.display='block';img.src=el.dataset.full;o.style.display='flex';}
 function showVideo(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');img.style.display='none';img.src='';v.style.display='block';v.src=el.dataset.full;o.style.display='flex';v.play();}
 function hide(){const o=document.getElementById('overlay');o.style.display='none';const v=o.querySelector('video');v.pause();v.src='';}
@@ -243,6 +246,23 @@ def delete_all(album_name):
         os.makedirs(path, exist_ok=True)
     return jsonify({'ok':True})
 
+@app.route("/<album_name>/pack")
+def pack_zip(album_name):
+    album=safe_album(album_name)
+    path=os.path.join(UPLOAD_ROOT, album)
+    if not os.path.isdir(path):
+        abort(404)
+    files=[f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
+    total=len(files) or 1
+    zpath=os.path.join(path, f"{album}.zip")
+    def gen():
+        with zipfile.ZipFile(zpath,'w',zipfile.ZIP_DEFLATED) as z:
+            for i,f in enumerate(files,1):
+                z.write(os.path.join(path,f), arcname=f)
+                yield f"data:{i/total:.4f}\n\n"
+        yield "data:done\n\n"
+    return Response(gen(), mimetype='text/event-stream')
+
 @app.route("/<album_name>", methods=['GET','POST'])
 def album(album_name):
     album=safe_album(album_name)
@@ -266,13 +286,18 @@ def album(album_name):
 
 @app.route("/<album_name>/download_all")
 def download_all(album_name):
-    album=safe_album(album_name); album_path=os.path.join(UPLOAD_ROOT, album)
-    if not os.path.isdir(album_path): abort(404)
-    tmp=os.path.join(UPLOAD_ROOT, f"{album}_tmp")
-    z=tmp+'.zip'
-    if os.path.exists(z): os.remove(z)
-    shutil.make_archive(tmp,'zip',root_dir=album_path)
-    return send_file(z, as_attachment=True, download_name=f"{album}.zip")
+    album=safe_album(album_name)
+    zpath=os.path.join(UPLOAD_ROOT, album, f"{album}.zip")
+    if not os.path.isfile(zpath):
+        abort(404)
+    resp=send_file(zpath, as_attachment=True, download_name=f"{album}.zip")
+    @resp.call_on_close
+    def cleanup():
+        try:
+            os.remove(zpath)
+        except Exception:
+            pass
+    return resp
 
 if __name__=='__main__':
     print('运行: http://127.0.0.1:5000')
