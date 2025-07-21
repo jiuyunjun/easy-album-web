@@ -8,7 +8,7 @@
 3. 视频 Range 流式播放（支持拖动 / 极速加载）。
 """
 
-import os, shutil, hashlib, mimetypes
+import os, shutil, hashlib, mimetypes, io
 from datetime import datetime
 from flask import (
     Flask, request, render_template_string, abort, flash, send_file, Response, redirect, url_for, jsonify
@@ -19,6 +19,7 @@ from werkzeug.utils import secure_filename
 UPLOAD_ROOT = os.path.abspath("uploads")
 ALLOWED_EXTS = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp",
+    ".dng", ".raw", ".nef", ".cr2", ".arw", ".rw2",
     ".mp4", ".webm", ".ogg", ".avi", ".mov", ".mkv"
 }
 MAX_CONTENT_LENGTH = 5 * 1024 * 1024 * 1024  # 5 GB/请求
@@ -27,6 +28,13 @@ app = Flask(__name__, static_folder=UPLOAD_ROOT, static_url_path="/uploads")
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.secret_key = "local-secret"
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
+
+THUMB_DIR = ".thumbs"
+THUMB_SIZE = (320, 320)
+PLACEHOLDER = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00"
+    b"\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
 
 # ------------------ 工具 ------------------
 
@@ -42,6 +50,30 @@ def sha256(path: str) -> str:
 
 def safe_album(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c == "_")
+
+def make_thumb(src: str, dest: str):
+    """Create thumbnail for image/raw/video files."""
+    try:
+        from PIL import Image
+        import rawpy
+    except Exception:
+        return
+    ext = os.path.splitext(src)[1].lower()
+    try:
+        if ext in {".dng", ".raw", ".nef", ".cr2", ".arw", ".rw2"}:
+            with rawpy.imread(src) as r:
+                img = Image.fromarray(r.postprocess())
+        else:
+            img = Image.open(src)
+        img.thumbnail(THUMB_SIZE)
+        img.save(dest, "JPEG")
+    except Exception:
+        pass
+
+def thumb_path(album: str, filename: str) -> str:
+    d = os.path.join(UPLOAD_ROOT, album, THUMB_DIR)
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, filename + ".jpg")
 
 # ---------- Range 流式播放 ----------
 
@@ -88,7 +120,7 @@ ALBUM = """<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>
 #progwrap{display:none;height:20px;background:#e0e0e0;border-radius:10px;margin-top:6px;overflow:hidden;}#progbar{height:100%;width:0;background:#4caf50;transition:width .2s;}#progtext{font-size:.85rem;margin-top:4px;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--gap);margin-top:var(--gap);}figure{margin:0;padding:var(--gap);background:var(--card-bg);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;}
 figure img,figure video{max-width:100%;border-radius:4px;cursor:pointer;}figcaption{margin-top:4px;font-size:.8rem;word-break:break-all;text-align:center;}
-#overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}#overlay img{max-width:90vw;max-height:90vh;border-radius:6px;}
+#overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}#overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;}
 </style></head><body>
 <h2>{{ album }}</h2>
 <div id='upload'><input type='file' id='files' multiple>
@@ -97,12 +129,12 @@ figure img,figure video{max-width:100%;border-radius:4px;cursor:pointer;}figcapt
 <div id='progwrap'><div id='progbar'></div></div><div id='progtext'></div></div>
 {% with m=get_flashed_messages() %}{% if m %}<ul>{% for x in m %}<li style='color:#d32f2f;'>{{ x }}</li>{% endfor %}</ul>{% endif %}{% endwith %}
 <div class='grid'>
-{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure><{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}video src='{{ url_for('stream', album_name=album, filename=f) }}' controls{% else %}img src='{{ url_for('static', filename=album+'/'+f) }}' onclick='zoom(this.src)'{% endif %}></{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}video{% else %}img{% endif %}>
+{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('stream', album_name=album, filename=f) }}' onclick='showVideo(this)'>{% else %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('static', filename=album+'/'+f) }}' onclick='showImage(this)'>{% endif %}
 <figcaption>{{ f }}</figcaption>
 <button onclick="delFile('{{ f }}')">删除</button>
 </figure>{% endfor %}
 </div>
-<div id='overlay' onclick='hide()'><img></div>
+<div id='overlay' onclick='hide()'><img><video controls style='display:none'></video></div>
 <script>const pw=document.getElementById('progwrap'),pb=document.getElementById('progbar'),pt=document.getElementById('progtext');
 function fmt(b){const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;++i;}return b.toFixed(i?1:0)+' '+u[i];}
 async function upload(){const fs=[...document.getElementById('files').files];if(!fs.length)return alert('请选择文件');if(!confirm(`确定上传 ${fs.length} 个文件吗?`))return;document.getElementById('btnup').disabled=true;pw.style.display='block';let done=0,bytes=0,t=fs.reduce((a,b)=>a+b.size,0);
@@ -110,8 +142,9 @@ async function upload(){const fs=[...document.getElementById('files').files];if(
  for(const f of fs)await doOne(f);location.reload();}
 function delFile(name){if(!confirm('删除 '+name+' ?'))return;fetch(location.pathname+'/delete', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:name})}).then(()=>location.reload());}
 function delAll(){if(!confirm('确定清空相册?'))return;fetch(location.pathname+'/delete_all',{method:'POST'}).then(()=>location.reload());}
-function zoom(s){const o=document.getElementById('overlay');o.style.display='flex';o.querySelector('img').src=s;}
-function hide(){document.getElementById('overlay').style.display='none';}
+function showImage(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');v.pause();v.style.display='none';v.src='';img.style.display='block';img.src=el.dataset.full;o.style.display='flex';}
+function showVideo(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');img.style.display='none';img.src='';v.style.display='block';v.src=el.dataset.full;o.style.display='flex';v.play();}
+function hide(){const o=document.getElementById('overlay');o.style.display='none';const v=o.querySelector('video');v.pause();v.src='';}
 </script></body></html>"""
 
 # ------------------ 路由 ------------------
@@ -130,6 +163,21 @@ def stream(album_name, filename):
         abort(404)
     mime=mimetypes.guess_type(path)[0] or 'application/octet-stream'
     return partial_response(path, mime)
+
+@app.route("/<album_name>/thumb/<path:filename>")
+def thumb(album_name, filename):
+    album=safe_album(album_name)
+    if not album:
+        abort(404)
+    src=os.path.join(UPLOAD_ROOT, album, filename)
+    if not os.path.isfile(src):
+        abort(404)
+    tp=thumb_path(album, filename)
+    if not os.path.isfile(tp):
+        make_thumb(src, tp)
+    if os.path.isfile(tp):
+        return send_file(tp, mimetype='image/jpeg')
+    return send_file(io.BytesIO(PLACEHOLDER), mimetype='image/gif')
 
 @app.route("/<album_name>/delete", methods=['POST'])
 def delete_file(album_name):
@@ -162,8 +210,10 @@ def album(album_name):
             fname=secure_filename(f.filename)
             if not allowed(fname):
                 flash(f'类型不允许: {fname}'); continue
-            f.save(os.path.join(path, fname))
-            print(f"[{datetime.now():%H:%M:%S}] {fname} SHA256={sha256(os.path.join(path,fname))}")
+            dest=os.path.join(path, fname)
+            f.save(dest)
+            make_thumb(dest, thumb_path(album, fname))
+            print(f"[{datetime.now():%H:%M:%S}] {fname} SHA256={sha256(dest)}")
         return ('',200)
     files=sorted([x for x in os.listdir(path) if os.path.isfile(os.path.join(path,x))], key=lambda x: os.path.getmtime(os.path.join(path,x)), reverse=True)
     return render_template_string(ALBUM, album=album, files=files)
