@@ -22,6 +22,9 @@ ALLOWED_EXTS = {
     ".dng", ".raw", ".nef", ".cr2", ".arw", ".rw2",
     ".mp4", ".webm", ".ogg", ".avi", ".mov", ".mkv"
 }
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
+VIDEO_EXTS = {".mp4", ".webm", ".ogg", ".avi", ".mov", ".mkv"}
+RAW_EXTS   = {".dng", ".raw", ".nef", ".cr2", ".arw", ".rw2"}
 MAX_CONTENT_LENGTH = 5 * 1024 * 1024 * 1024  # 5 GB/请求
 
 app = Flask(__name__, static_folder=UPLOAD_ROOT, static_url_path="/uploads")
@@ -60,9 +63,20 @@ def make_thumb(src: str, dest: str):
         return
     ext = os.path.splitext(src)[1].lower()
     try:
-        if ext in {".dng", ".raw", ".nef", ".cr2", ".arw", ".rw2"}:
+        if ext in RAW_EXTS:
             with rawpy.imread(src) as r:
                 img = Image.fromarray(r.postprocess())
+        elif ext in VIDEO_EXTS:
+            try:
+                import cv2
+                v = cv2.VideoCapture(src)
+                ok, frame = v.read()
+                v.release()
+                if not ok:
+                    return
+                img = Image.fromarray(frame[..., ::-1])
+            except Exception:
+                return
         else:
             img = Image.open(src)
         img.thumbnail(THUMB_SIZE)
@@ -119,19 +133,20 @@ ALBUM = """<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>
 #upload{background:var(--card-bg);padding:var(--gap);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.1);}button{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;margin-right:.5rem;}button:disabled{opacity:.4;}
 #progwrap{display:none;height:20px;background:#e0e0e0;border-radius:10px;margin-top:6px;overflow:hidden;}#progbar{height:100%;width:0;background:#4caf50;transition:width .2s;}#progtext{font-size:.85rem;margin-top:4px;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--gap);margin-top:var(--gap);}figure{margin:0;padding:var(--gap);background:var(--card-bg);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;}
-figure img,figure video{max-width:100%;border-radius:4px;cursor:pointer;}figcaption{margin-top:4px;font-size:.8rem;word-break:break-all;text-align:center;}
+figure img,figure video{width:100%;border-radius:4px;cursor:pointer;}figcaption{margin-top:4px;font-size:.8rem;word-break:break-all;text-align:center;}
 #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}#overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;}
 </style></head><body>
 <h2>{{ album }}</h2>
 <div id='upload'><input type='file' id='files' multiple>
 <button id='btnup' onclick='upload()'>上传</button>
 <button onclick='delAll()'>清空相册</button>
+<a href='{{ url_for('download_all', album_name=album) }}'>打包下载</a>
 <div id='progwrap'><div id='progbar'></div></div><div id='progtext'></div></div>
 {% with m=get_flashed_messages() %}{% if m %}<ul>{% for x in m %}<li style='color:#d32f2f;'>{{ x }}</li>{% endfor %}</ul>{% endif %}{% endwith %}
 <div class='grid'>
-{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('stream', album_name=album, filename=f) }}' onclick='showVideo(this)'>{% else %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('static', filename=album+'/'+f) }}' onclick='showImage(this)'>{% endif %}
+{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('stream', album_name=album, filename=f) }}' onclick='showVideo(this)'>{% elif ext in ['dng','raw','nef','cr2','arw','rw2'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('preview', album_name=album, filename=f) }}' onclick='showImage(this)'>{% else %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('static', filename=album+'/'+f) }}' onclick='showImage(this)'>{% endif %}
 <figcaption>{{ f }}</figcaption>
-<button onclick="delFile('{{ f }}')">删除</button>
+<div><a href='{{ url_for('download_file_get', album_name=album, filename=f) }}'>下载</a> <button onclick="delFile('{{ f }}')">删除</button></div>
 </figure>{% endfor %}
 </div>
 <div id='overlay' onclick='hide()'><img><video controls style='display:none'></video></div>
@@ -178,6 +193,37 @@ def thumb(album_name, filename):
     if os.path.isfile(tp):
         return send_file(tp, mimetype='image/jpeg')
     return send_file(io.BytesIO(PLACEHOLDER), mimetype='image/gif')
+
+@app.route("/<album_name>/preview/<path:filename>")
+def preview(album_name, filename):
+    album=safe_album(album_name)
+    if not album:
+        abort(404)
+    src=os.path.join(UPLOAD_ROOT, album, filename)
+    if not os.path.isfile(src):
+        abort(404)
+    ext=os.path.splitext(src)[1].lower()
+    if ext in RAW_EXTS:
+        try:
+            from PIL import Image
+            import rawpy
+            with rawpy.imread(src) as r:
+                img = Image.fromarray(r.postprocess())
+            buf=io.BytesIO(); img.save(buf,'JPEG'); buf.seek(0)
+            return send_file(buf, mimetype='image/jpeg')
+        except Exception:
+            pass
+    return send_file(src)
+
+@app.route("/<album_name>/download/<path:filename>")
+def download_file_get(album_name, filename):
+    album=safe_album(album_name)
+    if not album:
+        abort(404)
+    path=os.path.join(UPLOAD_ROOT, album, filename)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=filename)
 
 @app.route("/<album_name>/delete", methods=['POST'])
 def delete_file(album_name):
