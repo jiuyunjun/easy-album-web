@@ -24,7 +24,10 @@
     figcaption .name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all;min-height:2.4em;}
     figcaption .meta{font-size:.75rem;color:#666;display:block;line-height:1.2;}
     #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
-    #overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;}
+    #overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;transition:transform .2s;}
+    #overlay .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;font-size:2rem;padding:.5rem;border-radius:50%;cursor:pointer;user-select:none;}
+    #overlay #prev{left:1rem;}
+    #overlay #next{right:1rem;}
   </style>
 </head>
 <body>
@@ -81,8 +84,10 @@
 </figure>{% endfor %}
 </div>
 <div id='overlay' onclick='hide()'>
+  <button id='prev' class='nav' onclick='event.stopPropagation();prev()'>&lsaquo;</button>
   <img>
   <video controls style='display:none'></video>
+  <button id='next' class='nav' onclick='event.stopPropagation();next()'>&rsaquo;</button>
 </div>
 <script>
 const pw=document.getElementById('progwrap'),pb=document.getElementById('progbar'),pt=document.getElementById('progtext');
@@ -113,9 +118,16 @@ async function upload(){const fs=[...(dropped||input.files)];if(!fs.length)retur
 function delFile(name){if(!confirm('删除 '+name+' ?'))return;fetch(location.pathname+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:name})}).then(()=>location.reload());}
 function delAll(){if(!confirm('确定清空相册?'))return;fetch(location.pathname+'/delete_all',{method:'POST'}).then(()=>location.reload());}
 function pack(){const es=new EventSource(location.pathname+'/pack');pw.style.display='block';pb.style.width='0';pt.textContent='';es.onmessage=e=>{if(e.data==='done'){es.close();location.href=location.pathname+'/download_all';}else{pb.style.width=(parseFloat(e.data)*100).toFixed(1)+'%';pt.textContent='打包 '+(parseFloat(e.data)*100).toFixed(0)+'%';}};}
-function showImage(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');v.pause();v.style.display='none';v.src='';img.style.display='block';img.src=el.dataset.full;o.style.display='flex';}
-function showVideo(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');img.style.display='none';img.src='';v.style.display='block';v.src=el.dataset.full;o.style.display='flex';v.play();}
-function hide(){const o=document.getElementById('overlay');o.style.display='none';const v=o.querySelector('video');v.pause();v.src='';}
+const items=[...document.querySelectorAll('.grid img, .grid video')];
+let idx=-1,scale=1;
+function showAt(i){if(i<0||i>=items.length)return;idx=i;scale=1;const it=items[i];const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');if(it.tagName.toLowerCase()==='video'){img.style.display='none';img.src='';v.style.display='block';v.src=it.dataset.full;o.style.display='flex';v.play();}else{v.pause();v.style.display='none';v.src='';img.style.display='block';img.style.transform='scale(1)';img.src=it.dataset.full;o.style.display='flex';}}
+function showImage(el){showAt(items.indexOf(el));}
+function showVideo(el){showAt(items.indexOf(el));}
+function hide(){const o=document.getElementById('overlay');o.style.display='none';const v=o.querySelector('video');v.pause();v.src='';idx=-1;}
+function next(){if(idx<items.length-1)showAt(idx+1);}
+function prev(){if(idx>0)showAt(idx-1);}
+document.addEventListener('keydown',e=>{const o=document.getElementById('overlay');if(o.style.display!=='flex')return;if(e.key==='ArrowRight'){next();e.preventDefault();}else if(e.key==='ArrowLeft'){prev();e.preventDefault();}});
+document.getElementById('overlay').addEventListener('wheel',e=>{const img=document.querySelector('#overlay img');if(img.style.display==='none')return;e.preventDefault();scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);img.style.transform=`scale(${scale})`;},{passive:false});
 </script>
 </body>
 </html>
