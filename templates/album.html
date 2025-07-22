@@ -32,7 +32,10 @@
   </style>
 </head>
 <body>
-<h2>{{ album }}</h2>
+<h2>{{ album }} <button class='btn' onclick='renameAlbum()'>重命名</button></h2>
+<p style='font-size:.9rem;color:#555;'>
+  图片 {{ counts.image }} ，视频 {{ counts.video }} ，RAW {{ counts.raw }} ，其他 {{ counts.other }}
+</p>
 <div style='text-align:right;margin-bottom:.5rem;'>
   排序:
   <select id='sortsel' onchange="updateSort()">
@@ -119,6 +122,15 @@ async function upload(){const fs=[...(dropped||input.files)];if(!fs.length)retur
 function delFile(name){if(!confirm('删除 '+name+' ?'))return;fetch(location.pathname+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:name})}).then(()=>location.reload());}
 function delAll(){if(!confirm('确定清空相册?'))return;fetch(location.pathname+'/delete_all',{method:'POST'}).then(()=>location.reload());}
 function pack(){const es=new EventSource(location.pathname+'/pack');pw.style.display='block';pb.style.width='0';pt.textContent='';es.onmessage=e=>{if(e.data==='done'){es.close();location.href=location.pathname+'/download_all';}else{pb.style.width=(parseFloat(e.data)*100).toFixed(1)+'%';pt.textContent='打包 '+(parseFloat(e.data)*100).toFixed(0)+'%';}};}
+function renameAlbum(){
+  const name=prompt('新相册名', '{{ album }}');
+  if(!name)return;
+  fetch(location.pathname+'/rename',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name})
+  }).then(r=>r.json()).then(d=>{if(d.ok){location.href='/'+encodeURIComponent(d.new);}else{alert('重命名失败');}});
+}
 const items=[...document.querySelectorAll('.grid img, .grid video')];
 let idx=-1,scale=1,offX=0,offY=0;
 function updateTransform(){

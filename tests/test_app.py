@@ -59,3 +59,13 @@ def test_pack_zip(client, album_path):
     assert resp.status_code == 200
     assert os.path.isfile(zpath)
 
+
+def test_rename_album(client, album_path):
+    data = {"file": (io.BytesIO(b"x"), "a.jpg")}
+    client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    resp = client.post(f"/{ALBUM}/rename", json={"name": "renamed"})
+    assert resp.status_code == 200
+    assert os.path.isdir(os.path.join(UPLOAD_ROOT, "renamed"))
+    # cleanup renamed path
+    shutil.rmtree(os.path.join(UPLOAD_ROOT, "renamed"), ignore_errors=True)
+

@@ -292,10 +292,20 @@ def album(album_name):
     order = request.args.get('order', 'desc')
     rev = (order == 'desc')
     items = []
+    counts = {'image': 0, 'video': 0, 'raw': 0, 'other': 0}
     for name in os.listdir(path):
         fp = os.path.join(path, name)
         if not os.path.isfile(fp):
             continue
+        ext = os.path.splitext(name)[1].lower()
+        if ext in IMAGE_EXTS:
+            counts['image'] += 1
+        elif ext in VIDEO_EXTS:
+            counts['video'] += 1
+        elif ext in RAW_EXTS:
+            counts['raw'] += 1
+        else:
+            counts['other'] += 1
         items.append({
             'name': name,
             'size': os.path.getsize(fp),
@@ -313,7 +323,7 @@ def album(album_name):
         sort = 'mtime'
     if order not in {'asc','desc'}:
         order = 'desc'
-    return render_template('album.html', album=album, files=items, sort=sort, order=order)
+    return render_template('album.html', album=album, files=items, sort=sort, order=order, counts=counts)
 
 @app.route("/<album_name>/download_all")
 def download_all(album_name):
@@ -329,6 +339,24 @@ def download_all(album_name):
         except Exception:
             pass
     return resp
+
+
+@app.route("/<album_name>/rename", methods=['POST'])
+def rename_album(album_name):
+    """Rename an album folder."""
+    album = safe_album(album_name)
+    data = request.get_json(force=True)
+    new = safe_album(data.get('name', ''))
+    if not new:
+        return jsonify({'ok': False}), 400
+    src = os.path.join(UPLOAD_ROOT, album)
+    dst = os.path.join(UPLOAD_ROOT, new)
+    if not os.path.isdir(src):
+        abort(404)
+    if os.path.isdir(dst):
+        return jsonify({'ok': False, 'msg': 'exists'}), 400
+    os.rename(src, dst)
+    return jsonify({'ok': True, 'new': new})
 
 if __name__=='__main__':
     print('运行: http://127.0.0.1:5000')
