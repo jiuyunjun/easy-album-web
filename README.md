@@ -33,7 +33,7 @@ python -m unittest discover
 - **uploads/** 上传文件根目录，子文件夹即相册名  
 - **.thumbs/** 每个相册下自动生成的缩略图缓存  
 
-> 默认单文件大小上限 5 GB，可在 `app.py` 顶部 `MAX_CONTENT_LENGTH` 修改。
+> 默认单文件大小上限 5 GB，可在 `EasyAlbumWeb.py` 顶部 `MAX_CONTENT_LENGTH` 修改。
 
 ## License
 MIT
