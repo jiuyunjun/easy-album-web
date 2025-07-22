@@ -24,6 +24,11 @@ python EasyAlbumWeb.py
 # 浏览器访问 http://<本机或局域网IP>:5000
 ```
 
+### 运行测试
+```bash
+python -m unittest discover
+```
+
 ## 目录说明
 - **uploads/** 上传文件根目录，子文件夹即相册名  
 - **.thumbs/** 每个相册下自动生成的缩略图缓存  

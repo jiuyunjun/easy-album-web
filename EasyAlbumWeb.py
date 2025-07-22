@@ -14,7 +14,6 @@ from datetime import datetime
 from flask import (
     Flask, request, render_template, abort, flash, send_file, Response, redirect, url_for, jsonify
 )
-from werkzeug.utils import secure_filename
 
 # ------------------ 配置 ------------------
 UPLOAD_ROOT = os.path.abspath("uploads")
@@ -55,6 +54,13 @@ def sha256(path: str) -> str:
 
 def safe_album(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c == "_")
+
+def sanitize_filename(name: str) -> str:
+    """Allow UTF-8 filenames while stripping path separators and control chars."""
+    name = os.path.basename(name)
+    name = name.replace("\x00", "")
+    import re
+    return re.sub(r"[^\w\u4e00-\u9fff().\- ]+", "_", name)
 
 def make_thumb(src: str, dest: str):
     """Create thumbnail for image/raw/video files."""
@@ -227,7 +233,7 @@ def album(album_name):
         for f in request.files.getlist('file'):
             if not f or f.filename=='':
                 continue
-            fname=secure_filename(f.filename)
+            fname=sanitize_filename(f.filename)
             if not allowed(fname):
                 flash(f'类型不允许: {fname}')
                 continue
