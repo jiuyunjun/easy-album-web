@@ -83,7 +83,7 @@
   </div>
 </figure>{% endfor %}
 </div>
-<div id='overlay' onclick='hide()'>
+<div id='overlay'>
   <button id='prev' class='nav' onclick='event.stopPropagation();prev()'>&lsaquo;</button>
   <img>
   <video controls style='display:none'></video>
@@ -135,6 +135,8 @@ const overlay=document.getElementById('overlay');
 const imgEl=document.querySelector('#overlay img');
 let dragging=false,lastX=0,lastY=0;
 imgEl.addEventListener('mousedown',e=>{if(e.button!==0)return;dragging=true;lastX=e.clientX;lastY=e.clientY;e.preventDefault();e.stopPropagation();});
+imgEl.addEventListener('click',e=>e.stopPropagation());
+overlay.addEventListener('click',e=>{if(e.target===overlay)hide();});
 document.addEventListener('mousemove',e=>{if(!dragging)return;offX+=e.clientX-lastX;offY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;updateTransform();});
 document.addEventListener('mouseup',()=>{dragging=false;});
 overlay.addEventListener('wheel',e=>{if(imgEl.style.display==='none')return;e.preventDefault();const rect=imgEl.getBoundingClientRect();const cx=e.clientX-(rect.left+rect.width/2);const cy=e.clientY-(rect.top+rect.height/2);const old=scale;scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);const ratio=scale/old;offX-=cx*(ratio-1);offY-=cy*(ratio-1);updateTransform();},{passive:false});
