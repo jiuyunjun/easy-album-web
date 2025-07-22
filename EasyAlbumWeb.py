@@ -90,6 +90,8 @@ def make_thumb(src: str, dest: str):
                 return
         else:
             img = Image.open(src)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
         img.thumbnail(THUMB_SIZE)
         img.save(dest, "JPEG")
     except Exception:
