@@ -26,7 +26,7 @@ python EasyAlbumWeb.py
 
 ### 运行测试
 ```bash
-python -m unittest discover
+python -m pytest -v
 ```
 
 ## 目录说明
