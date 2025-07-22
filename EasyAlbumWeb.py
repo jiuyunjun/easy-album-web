@@ -51,6 +51,12 @@ def fmt_bytes(b: int) -> str:
 
 app.jinja_env.filters["fmt_bytes"] = fmt_bytes
 
+# Format timestamp for templates
+def fmt_time(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+app.jinja_env.filters["fmt_time"] = fmt_time
+
 # ------------------ 工具 ------------------
 
 def allowed(fn: str) -> bool:
@@ -263,6 +269,8 @@ def album(album_name):
             ft.result()
         return ('',200)
     sort = request.args.get('sort', 'mtime')
+    order = request.args.get('order', 'desc')
+    rev = (order == 'desc')
     items = []
     for name in os.listdir(path):
         fp = os.path.join(path, name)
@@ -275,15 +283,17 @@ def album(album_name):
             'ctime': os.path.getctime(fp),
         })
     if sort == 'name':
-        items.sort(key=lambda x: x['name'].lower())
+        items.sort(key=lambda x: x['name'].lower(), reverse=rev)
     elif sort == 'size':
-        items.sort(key=lambda x: x['size'], reverse=True)
+        items.sort(key=lambda x: x['size'], reverse=rev)
     elif sort == 'ctime':
-        items.sort(key=lambda x: x['ctime'], reverse=True)
+        items.sort(key=lambda x: x['ctime'], reverse=rev)
     else:
-        items.sort(key=lambda x: x['mtime'], reverse=True)
+        items.sort(key=lambda x: x['mtime'], reverse=rev)
         sort = 'mtime'
-    return render_template('album.html', album=album, files=items, sort=sort)
+    if order not in {'asc','desc'}:
+        order = 'desc'
+    return render_template('album.html', album=album, files=items, sort=sort, order=order)
 
 @app.route("/<album_name>/download_all")
 def download_all(album_name):
