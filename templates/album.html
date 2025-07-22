@@ -25,6 +25,7 @@
     figcaption .meta{font-size:.75rem;color:#666;display:block;line-height:1.2;}
     #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
     #overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;transition:transform .2s;}
+    #overlay img.dragging{transition:none;}
     #overlay .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;font-size:2rem;padding:.5rem;border-radius:50%;cursor:pointer;user-select:none;}
     #overlay #prev{left:1rem;}
     #overlay #next{right:1rem;}
@@ -134,11 +135,29 @@ document.addEventListener('keydown',e=>{const o=document.getElementById('overlay
 const overlay=document.getElementById('overlay');
 const imgEl=document.querySelector('#overlay img');
 let dragging=false,lastX=0,lastY=0;
-imgEl.addEventListener('mousedown',e=>{if(e.button!==0)return;dragging=true;lastX=e.clientX;lastY=e.clientY;e.preventDefault();e.stopPropagation();});
+imgEl.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  dragging=true;
+  imgEl.classList.add('dragging');
+  lastX=e.clientX;
+  lastY=e.clientY;
+  e.preventDefault();
+  e.stopPropagation();
+});
 imgEl.addEventListener('click',e=>e.stopPropagation());
 overlay.addEventListener('click',e=>{if(e.target===overlay)hide();});
-document.addEventListener('mousemove',e=>{if(!dragging)return;offX+=e.clientX-lastX;offY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;updateTransform();});
-document.addEventListener('mouseup',()=>{dragging=false;});
+document.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  offX+=e.clientX-lastX;
+  offY+=e.clientY-lastY;
+  lastX=e.clientX;
+  lastY=e.clientY;
+  updateTransform();
+});
+document.addEventListener('mouseup',()=>{
+  dragging=false;
+  imgEl.classList.remove('dragging');
+});
 overlay.addEventListener('wheel',e=>{if(imgEl.style.display==='none')return;e.preventDefault();const rect=imgEl.getBoundingClientRect();const cx=e.clientX-(rect.left+rect.width/2);const cy=e.clientY-(rect.top+rect.height/2);const old=scale;scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);const ratio=scale/old;offX-=cx*(ratio-1);offY-=cy*(ratio-1);updateTransform();},{passive:false});
 </script>
 </body>
