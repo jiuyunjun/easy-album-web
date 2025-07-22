@@ -16,7 +16,8 @@
     #progtext{font-size:.85rem;margin-top:4px;}
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--gap);margin-top:var(--gap);}
     figure{margin:0;padding:var(--gap);background:var(--card-bg);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;}
-    figure img,figure video{width:100%;border-radius:4px;cursor:pointer;}
+    figure img,figure video{width:100%;height:160px;object-fit:cover;border-radius:4px;cursor:pointer;}
+    #filelist{margin-top:.5rem;text-align:left;font-size:.9rem;line-height:1.4;list-style:disc inside;max-height:200px;overflow:auto;}
     figcaption{margin-top:4px;font-size:.8rem;word-break:break-all;text-align:center;}
     #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
     #overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;}
@@ -33,6 +34,7 @@
   <a class='btn' href='javascript:void(0)' onclick='pack()'>打包下载</a>
   <div id='progwrap'><div id='progbar'></div></div>
   <div id='progtext'></div>
+  <ul id='filelist'></ul>
 </div>
 {% with m=get_flashed_messages() %}{% if m %}
 <ul>
@@ -61,11 +63,16 @@
 <script>
 const pw=document.getElementById('progwrap'),pb=document.getElementById('progbar'),pt=document.getElementById('progtext');
 const drop=document.getElementById('upload');
+const input=document.getElementById('files');
+const filelist=document.getElementById('filelist');
+let dropped=null;
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.background='#f0f8ff';});
 drop.addEventListener('dragleave',()=>{drop.style.background='var(--card-bg)';});
-drop.addEventListener('drop',e=>{e.preventDefault();drop.style.background='var(--card-bg)';document.getElementById('files').files=e.dataTransfer.files;});
+drop.addEventListener('drop',e=>{e.preventDefault();drop.style.background='var(--card-bg)';dropped=e.dataTransfer.files;input.value='';showList(dropped);});
+input.addEventListener('change',()=>{dropped=null;showList(input.files);});
+function showList(fs){filelist.innerHTML='';for(const f of fs){const li=document.createElement('li');li.textContent=f.name;filelist.appendChild(li);}}
 function fmt(b){const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;++i;}return b.toFixed(i?1:0)+' '+u[i];}
-async function upload(){const fs=[...document.getElementById('files').files];if(!fs.length)return alert('请选择文件');if(!confirm(`确定上传 ${fs.length} 个文件吗?`))return;document.getElementById('btnup').disabled=true;pw.style.display='block';let done=0,bytes=0,total=fs.reduce((a,b)=>a+b.size,0);
+async function upload(){const fs=[...(dropped||input.files)];if(!fs.length)return alert('请选择文件');if(!confirm(`确定上传 ${fs.length} 个文件吗?`))return;document.getElementById('btnup').disabled=true;pw.style.display='block';let done=0,bytes=0,total=fs.reduce((a,b)=>a+b.size,0);
   const limit=4;
   const queue=fs.slice();
   const work=async()=>{
