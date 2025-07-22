@@ -66,12 +66,15 @@ def make_thumb(src: str, dest: str):
     """Create thumbnail for image/raw/video files."""
     try:
         from PIL import Image
-        import rawpy
     except Exception:
         return
     ext = os.path.splitext(src)[1].lower()
     try:
         if ext in RAW_EXTS:
+            try:
+                import rawpy
+            except Exception:
+                return
             with rawpy.imread(src) as r:
                 img = Image.fromarray(r.postprocess())
         elif ext in VIDEO_EXTS:
