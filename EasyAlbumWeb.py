@@ -9,9 +9,10 @@
 """
 
 import os, shutil, hashlib, mimetypes, io, zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from flask import (
-    Flask, request, render_template_string, abort, flash, send_file, Response, redirect, url_for, jsonify
+    Flask, request, render_template, abort, flash, send_file, Response, redirect, url_for, jsonify
 )
 from werkzeug.utils import secure_filename
 
@@ -34,6 +35,7 @@ os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 THUMB_DIR = ".thumbs"
 THUMB_SIZE = (320, 320)
+executor = ThreadPoolExecutor(max_workers=4)
 PLACEHOLDER = (
     b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00"
     b"\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
@@ -115,61 +117,12 @@ def partial_response(path: str, mime: str):
     resp.headers.add("Accept-Ranges", "bytes")
     return resp
 
-# ------------------ HTML 模板 ------------------
-INDEX = """<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>相册</title>
-<style>body{font-family:system-ui,Arial,sans-serif;margin:0;padding:2rem 1rem;max-width:800px;}
-.album{display:block;padding:.75rem 1rem;margin:.4rem 0;border-radius:8px;background:#f5f5f5;text-decoration:none;color:#333;box-shadow:inset 0 0 0 1px #ddd;}
-.album:hover{background:#eee;}</style></head><body>
-<h2>全部相册</h2>
-{% for a in albums %}<a class='album' href='{{ url_for('album', album_name=a) }}'>{{ a }}</a>{% endfor %}
-{% if not albums %}<p>暂无相册，在地址栏输入 <kbd>/album_name</kbd> 创建。</p>{% endif %}
-</body></html>"""
-
-ALBUM = """<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>{{ album }}</title>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
-<style>
-:root{--gap:12px;--card-bg:#fff;--primary:#1976d2;--radius:8px;}
-*{box-sizing:border-box;}body{font-family:system-ui,Arial,sans-serif;margin:0;padding:var(--gap);background:#fafafa;}
-#upload{background:var(--card-bg);padding:var(--gap);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.1);}
-button,.btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;margin-right:.5rem;text-decoration:none;display:inline-block;cursor:pointer;font:1rem/1.2 system-ui,Arial,sans-serif;}
-button:disabled{opacity:.4;}
-#progwrap{display:none;height:20px;background:#e0e0e0;border-radius:10px;margin-top:6px;overflow:hidden;}#progbar{height:100%;width:0;background:#4caf50;transition:width .2s;}#progtext{font-size:.85rem;margin-top:4px;}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--gap);margin-top:var(--gap);}figure{margin:0;padding:var(--gap);background:var(--card-bg);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;}
-figure img,figure video{width:100%;border-radius:4px;cursor:pointer;}figcaption{margin-top:4px;font-size:.8rem;word-break:break-all;text-align:center;}
-#overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}#overlay img,#overlay video{max-width:90vw;max-height:90vh;border-radius:6px;}
-</style></head><body>
-<h2>{{ album }}</h2>
-<div id='upload'><input type='file' id='files' multiple>
-<button id='btnup' class='btn' onclick='upload()'>上传</button>
-<button class='btn' onclick='delAll()'>清空相册</button>
-<a id='btnpack' class='btn' href='javascript:void(0)' onclick='pack()'>打包下载</a>
-<div id='progwrap'><div id='progbar'></div></div><div id='progtext'></div></div>
-{% with m=get_flashed_messages() %}{% if m %}<ul>{% for x in m %}<li style='color:#d32f2f;'>{{ x }}</li>{% endfor %}</ul>{% endif %}{% endwith %}
-<div class='grid'>
-{% for f in files %}{% set ext=f.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}<video src='{{ url_for('stream', album_name=album, filename=f) }}#t=0.1' data-full='{{ url_for('stream', album_name=album, filename=f) }}' preload='metadata' muted onclick='showVideo(this)'></video>{% elif ext in ['dng','raw','nef','cr2','arw','rw2'] %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('preview', album_name=album, filename=f) }}' onclick='showImage(this)'>{% else %}<img src='{{ url_for('thumb', album_name=album, filename=f) }}' data-full='{{ url_for('static', filename=album+'/'+f) }}' onclick='showImage(this)'>{% endif %}
-<figcaption>{{ f }}</figcaption>
-<div><a class='btn' href='{{ url_for('download_file_get', album_name=album, filename=f) }}'>下载</a> <button class='btn' onclick="delFile('{{ f }}')">删除</button></div>
-</figure>{% endfor %}
-</div>
-<div id='overlay' onclick='hide()'><img><video controls style='display:none'></video></div>
-<script>const pw=document.getElementById('progwrap'),pb=document.getElementById('progbar'),pt=document.getElementById('progtext');
-function fmt(b){const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;++i;}return b.toFixed(i?1:0)+' '+u[i];}
-async function upload(){const fs=[...document.getElementById('files').files];if(!fs.length)return alert('请选择文件');if(!confirm(`确定上传 ${fs.length} 个文件吗?`))return;document.getElementById('btnup').disabled=true;pw.style.display='block';let done=0,bytes=0,t=fs.reduce((a,b)=>a+b.size,0);
- const doOne=f=>new Promise(r=>{const fd=new FormData();fd.append('file',f);const x=new XMLHttpRequest();x.open('POST',location.pathname);x.upload.onprogress=e=>{pb.style.width=((bytes+e.loaded)/t*100).toFixed(1)+'%';pt.textContent=`${done}/${fs.length}  ${fmt(bytes+e.loaded)} / ${fmt(t)}`;};x.onload=()=>{bytes+=f.size;done++;r();};x.onerror=()=>{alert('失败 '+f.name);r();};x.send(fd);});
- for(const f of fs)await doOne(f);location.reload();}
-function delFile(name){if(!confirm('删除 '+name+' ?'))return;fetch(location.pathname+'/delete', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:name})}).then(()=>location.reload());}
-function delAll(){if(!confirm('确定清空相册?'))return;fetch(location.pathname+'/delete_all',{method:'POST'}).then(()=>location.reload());}
-function pack(){const es=new EventSource(location.pathname+'/pack');pw.style.display='block';pb.style.width='0';pt.textContent='';es.onmessage=e=>{if(e.data==='done'){es.close();location.href=location.pathname+'/download_all';}else{pb.style.width=(parseFloat(e.data)*100).toFixed(1)+'%';pt.textContent='打包 '+(parseFloat(e.data)*100).toFixed(0)+'%';}};}
-function showImage(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');v.pause();v.style.display='none';v.src='';img.style.display='block';img.src=el.dataset.full;o.style.display='flex';}
-function showVideo(el){const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');img.style.display='none';img.src='';v.style.display='block';v.src=el.dataset.full;o.style.display='flex';v.play();}
-function hide(){const o=document.getElementById('overlay');o.style.display='none';const v=o.querySelector('video');v.pause();v.src='';}
-</script></body></html>"""
 
 # ------------------ 路由 ------------------
 @app.route("/")
 def index():
     albums=[d for d in os.listdir(UPLOAD_ROOT) if os.path.isdir(os.path.join(UPLOAD_ROOT,d))]
-    return render_template_string(INDEX, albums=sorted(albums))
+    return render_template('index.html', albums=sorted(albums))
 
 @app.route("/<album_name>/stream/<path:filename>")
 def stream(album_name, filename):
@@ -270,19 +223,25 @@ def album(album_name):
         abort(404)
     path=os.path.join(UPLOAD_ROOT, album); os.makedirs(path, exist_ok=True)
     if request.method=='POST':
+        futures=[]
         for f in request.files.getlist('file'):
             if not f or f.filename=='':
                 continue
             fname=secure_filename(f.filename)
             if not allowed(fname):
-                flash(f'类型不允许: {fname}'); continue
+                flash(f'类型不允许: {fname}')
+                continue
             dest=os.path.join(path, fname)
-            f.save(dest)
-            make_thumb(dest, thumb_path(album, fname))
-            print(f"[{datetime.now():%H:%M:%S}] {fname} SHA256={sha256(dest)}")
+            def task(fileobj, d, name):
+                fileobj.save(d)
+                make_thumb(d, thumb_path(album, name))
+                print(f"[{datetime.now():%H:%M:%S}] {name} SHA256={sha256(d)}")
+            futures.append(executor.submit(task, f, dest, fname))
+        for ft in futures:
+            ft.result()
         return ('',200)
     files=sorted([x for x in os.listdir(path) if os.path.isfile(os.path.join(path,x))], key=lambda x: os.path.getmtime(os.path.join(path,x)), reverse=True)
-    return render_template_string(ALBUM, album=album, files=files)
+    return render_template('album.html', album=album, files=files)
 
 @app.route("/<album_name>/download_all")
 def download_all(album_name):
