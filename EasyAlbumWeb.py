@@ -79,6 +79,26 @@ def sanitize_filename(name: str) -> str:
     import re
     return re.sub(r"[^\w\u4e00-\u9fff().\- ]+", "_", name)
 
+def get_meta_time(path: str) -> float:
+    """Return creation time from metadata if possible."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in IMAGE_EXTS | RAW_EXTS:
+        try:
+            from PIL import Image, ExifTags
+            img = Image.open(path)
+            exif = img._getexif() or {}
+            tags = {ExifTags.TAGS.get(k, k): v for k, v in exif.items()}
+            for key in ("DateTimeOriginal", "DateTimeDigitized", "DateTime"):
+                if key in tags:
+                    try:
+                        dt = datetime.strptime(str(tags[key]), "%Y:%m:%d %H:%M:%S")
+                        return dt.timestamp()
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+    return os.path.getmtime(path)
+
 def make_thumb(src: str, dest: str):
     """Create thumbnail for image/raw/video files."""
     try:
@@ -280,7 +300,7 @@ def album(album_name):
             'name': name,
             'size': os.path.getsize(fp),
             'mtime': os.path.getmtime(fp),
-            'ctime': os.path.getctime(fp),
+            'ctime': get_meta_time(fp),
         })
     if sort == 'name':
         items.sort(key=lambda x: x['name'].lower(), reverse=rev)
