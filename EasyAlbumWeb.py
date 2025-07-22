@@ -40,6 +40,17 @@ PLACEHOLDER = (
     b"\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
 )
 
+# Format bytes for templates
+def fmt_bytes(b: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while b >= 1024 and i < len(units) - 1:
+        b /= 1024
+        i += 1
+    return f"{b:.1f} {units[i]}" if i else f"{int(b)} B"
+
+app.jinja_env.filters["fmt_bytes"] = fmt_bytes
+
 # ------------------ 工具 ------------------
 
 def allowed(fn: str) -> bool:
@@ -251,8 +262,28 @@ def album(album_name):
         for ft in futures:
             ft.result()
         return ('',200)
-    files=sorted([x for x in os.listdir(path) if os.path.isfile(os.path.join(path,x))], key=lambda x: os.path.getmtime(os.path.join(path,x)), reverse=True)
-    return render_template('album.html', album=album, files=files)
+    sort = request.args.get('sort', 'mtime')
+    items = []
+    for name in os.listdir(path):
+        fp = os.path.join(path, name)
+        if not os.path.isfile(fp):
+            continue
+        items.append({
+            'name': name,
+            'size': os.path.getsize(fp),
+            'mtime': os.path.getmtime(fp),
+            'ctime': os.path.getctime(fp),
+        })
+    if sort == 'name':
+        items.sort(key=lambda x: x['name'].lower())
+    elif sort == 'size':
+        items.sort(key=lambda x: x['size'], reverse=True)
+    elif sort == 'ctime':
+        items.sort(key=lambda x: x['ctime'], reverse=True)
+    else:
+        items.sort(key=lambda x: x['mtime'], reverse=True)
+        sort = 'mtime'
+    return render_template('album.html', album=album, files=items, sort=sort)
 
 @app.route("/<album_name>/download_all")
 def download_all(album_name):
