@@ -125,6 +125,7 @@ function pack(){const es=new EventSource(location.pathname+'/pack');pw.style.dis
 function renameAlbum(){
   const name=prompt('新相册名', '{{ album }}');
   if(!name)return;
+  if(!/^[A-Za-z0-9_]+$/.test(name)){alert('名称含非法字符');return;}
   fetch(location.pathname+'/rename',{
     method:'POST',
     headers:{'Content-Type':'application/json'},

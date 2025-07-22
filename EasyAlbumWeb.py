@@ -72,6 +72,11 @@ def sha256(path: str) -> str:
 def safe_album(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c == "_")
 
+def valid_album(name: str) -> bool:
+    """Return True if the given name is a legal album path segment."""
+    import re
+    return bool(re.fullmatch(r"[A-Za-z0-9_]+", name))
+
 def sanitize_filename(name: str) -> str:
     """Allow UTF-8 filenames while stripping path separators and control chars."""
     name = os.path.basename(name)
@@ -346,9 +351,10 @@ def rename_album(album_name):
     """Rename an album folder."""
     album = safe_album(album_name)
     data = request.get_json(force=True)
-    new = safe_album(data.get('name', ''))
-    if not new:
-        return jsonify({'ok': False}), 400
+    newname = data.get('name', '')
+    if not valid_album(newname):
+        return jsonify({'ok': False, 'msg': 'invalid'}), 400
+    new = safe_album(newname)
     src = os.path.join(UPLOAD_ROOT, album)
     dst = os.path.join(UPLOAD_ROOT, new)
     if not os.path.isdir(src):

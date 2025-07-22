@@ -69,3 +69,10 @@ def test_rename_album(client, album_path):
     # cleanup renamed path
     shutil.rmtree(os.path.join(UPLOAD_ROOT, "renamed"), ignore_errors=True)
 
+
+def test_rename_invalid(client, album_path):
+    data = {"file": (io.BytesIO(b"x"), "a.jpg")}
+    client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    resp = client.post(f"/{ALBUM}/rename", json={"name": "bad/"})
+    assert resp.status_code == 400
+
