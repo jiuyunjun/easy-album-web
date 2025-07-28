@@ -365,5 +365,5 @@ def rename_album(album_name):
     return jsonify({'ok': True, 'new': new})
 
 if __name__=='__main__':
-    print('运行: http://127.0.0.1:5000')
-    app.run('0.0.0.0',5000,debug=False)
+    PORT = 5123
+    app.run('0.0.0.0',PORT,debug=False)
