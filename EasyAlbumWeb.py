@@ -346,6 +346,29 @@ def download_all(album_name):
     return resp
 
 
+@app.route("/<album_name>/rename_file", methods=['POST'])
+def rename_file(album_name):
+    """Rename a single file within an album."""
+    album = safe_album(album_name)
+    data = request.get_json(force=True)
+    old = data.get('old', '')
+    newname = sanitize_filename(data.get('new', ''))
+    if not old or not newname:
+        return jsonify({'ok': False, 'msg': 'invalid'}), 400
+    src = os.path.join(UPLOAD_ROOT, album, old)
+    dst = os.path.join(UPLOAD_ROOT, album, newname)
+    if not os.path.isfile(src):
+        abort(404)
+    if os.path.isfile(dst):
+        return jsonify({'ok': False, 'msg': 'exists'}), 400
+    os.rename(src, dst)
+    tp_old = thumb_path(album, old)
+    tp_new = thumb_path(album, newname)
+    if os.path.isfile(tp_old):
+        os.rename(tp_old, tp_new)
+    return jsonify({'ok': True, 'new': newname})
+
+
 @app.route("/<album_name>/rename", methods=['POST'])
 def rename_album(album_name):
     """Rename an album folder."""
