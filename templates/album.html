@@ -12,6 +12,7 @@
     #upload{background:var(--card-bg);padding:var(--gap);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center;border:2px dashed #ccc;}
     button,.btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;text-decoration:none;display:inline-block;cursor:pointer;font:1rem/1.2 system-ui,Arial,sans-serif;}
     .actions{display:flex;justify-content:center;flex-wrap:wrap;gap:.5rem;margin-top:.5rem;}
+    .editable{cursor:pointer;}
     button:disabled{opacity:.4;}
     #progwrap{display:none;height:20px;background:#e0e0e0;border-radius:10px;margin-top:6px;overflow:hidden;}
     #progbar{height:100%;width:0;background:#4caf50;transition:width .2s;}
@@ -77,12 +78,12 @@
   <img src='{{ url_for("thumb", album_name=album, filename=f.name) }}' data-full='{{ url_for("static", filename=album+'/'+f.name) }}' onclick='showImage(this)'>
 {% endif %}
   <figcaption>
-    <span class='name'>{{ f.name }}</span>
+    <span class='name editable' title='{{ f.name }}'>{{ f.name }}</span>
     <span class='meta'>{{ f.size | fmt_bytes }}</span>
     <span class='meta'>上传: {{ f.mtime | fmt_time }}</span>
     <span class='meta'>创建: {{ f.ctime | fmt_time }}</span>
   </figcaption>
-  <div>
+  <div class="actions">
     <a class='btn' href='{{ url_for("download_file_get", album_name=album, filename=f.name) }}'>下载</a>
     <button class='btn' onclick="delFile('{{ f.name }}')">删除</button>
   </div>
@@ -123,6 +124,46 @@ async function upload(){const fs=[...(dropped||input.files)];if(!fs.length)retur
 function delFile(name){if(!confirm('删除 '+name+' ?'))return;fetch(location.pathname+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:name})}).then(()=>location.reload());}
 function delAll(){if(!confirm('确定清空相册?'))return;fetch(location.pathname+'/delete_all',{method:'POST'}).then(()=>location.reload());}
 function pack(){const es=new EventSource(location.pathname+'/pack');pw.style.display='block';pb.style.width='0';pt.textContent='';es.onmessage=e=>{if(e.data==='done'){es.close();location.href=location.pathname+'/download_all';}else{pb.style.width=(parseFloat(e.data)*100).toFixed(1)+'%';pt.textContent='打包 '+(parseFloat(e.data)*100).toFixed(0)+'%';}};}
+function renameFile(oldName,newName){
+  if(!newName||newName===oldName)return;
+  fetch(location.pathname+'/rename_file',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({old:oldName,new:newName})
+  }).then(()=>location.reload());
+}
+
+document.querySelectorAll('figcaption .name').forEach(span=>{
+  span.addEventListener('click',()=>startEdit(span));
+});
+
+function startEdit(span){
+  if(span.dataset.editing)return;
+  span.dataset.editing='1';
+  const old=span.textContent;
+  const input=document.createElement('input');
+  input.type='text';
+  input.value=old;
+  input.style.width='100%';
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish=doRename=>{
+    input.replaceWith(span);
+    span.dataset.editing='';
+    const val=input.value.trim();
+    if(doRename&&val&&val!==old){
+      renameFile(old,val);
+    }else{
+      span.textContent=old;
+    }
+  };
+  input.addEventListener('blur',()=>finish(true));
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){input.blur();}
+    else if(e.key==='Escape'){input.value=old;finish(false);} 
+  });
+}
 function renameAlbum(){
   const name=prompt('新相册名', '{{ album }}');
   if(!name)return;
