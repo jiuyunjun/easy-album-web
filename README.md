@@ -22,7 +22,7 @@ pip install Flask Pillow
 ## 快速运行
 ```bash
 python EasyAlbumWeb.py
-# 浏览器访问 http://<本机或局域网IP>:5000
+# 浏览器访问 http://<本机或局域网IP>:5123
 ```
 
 ### 运行测试
