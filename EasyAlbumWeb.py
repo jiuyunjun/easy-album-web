@@ -315,6 +315,19 @@ def review_snapshot_delete(album_name, filename, snap_name):
         os.remove(path)
     return jsonify({'ok': True})
 
+@app.route("/<album_name>/review/<path:filename>/snapshots/delete_all", methods=['POST'])
+def review_snapshot_delete_all(album_name, filename):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    d = snapshot_dir(album, fname)
+    for n in os.listdir(d):
+        if n.lower().endswith('.jpg'):
+            try:
+                os.remove(os.path.join(d, n))
+            except FileNotFoundError:
+                pass
+    return jsonify({'ok': True})
+
 @app.route("/<album_name>/download/<path:filename>")
 def download_file_get(album_name, filename):
     album=safe_album(album_name)

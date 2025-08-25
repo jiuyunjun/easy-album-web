@@ -9,12 +9,14 @@
     #video{flex:1;background:#000;}
     #divider{width:4px;background:#ddd;cursor:col-resize;flex:none;}
     #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;flex:none;}
+    #toolbar{margin-bottom:8px;text-align:right;}
     #help{font-size:.85rem;margin-bottom:8px;color:#333;}
     #list{display:flex;flex-direction:column;gap:8px;}
     .shot{display:flex;align-items:center;gap:4px;}
     .shot img{width:80px;height:80px;object-fit:cover;cursor:pointer;border-radius:4px;}
-    .shot .name{flex:1;cursor:pointer;font-size:.8rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    .shot .time{font-size:.8rem;margin-left:4px;}
+    .shot .info{flex:1;display:flex;align-items:center;gap:4px;cursor:pointer;}
+    .shot .name{flex:1;font-size:.8rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .shot .time{font-size:.8rem;}
     .shot button{margin-left:2px;}
     #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
     #overlay img{max-width:90vw;max-height:90vh;border-radius:6px;transition:transform .2s;}
@@ -28,6 +30,7 @@
   <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
   <div id='divider'></div>
   <div id='shots'>
+    <div id='toolbar'><button id='delAll'>全部删除</button></div>
     <div id='help'>快捷键: F/D/S/A 后退0.5/1/3/5秒，J/K/L/; 前进0.5/1/3/5秒，空格 播放/暂停，回车 保存截图</div>
     <div id='list'></div>
   </div>
@@ -42,6 +45,12 @@ const divider=document.getElementById('divider');
 const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
 const shots=document.getElementById('list');
 const items=[];
+document.getElementById('delAll').onclick=async()=>{
+  if(!confirm('全部删除?'))return;
+  await fetch(snapUrl+'/delete_all',{method:'POST'});
+  shots.innerHTML='';
+  refreshItems();
+};
 let idx=-1,scale=1,offX=0,offY=0,splitDrag=false;
 function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
 function handleKey(e){
@@ -126,20 +135,28 @@ function addShot(name,time){
   let currentName=name;
   const div=document.createElement('div');div.className='shot';
   const img=document.createElement('img');img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;img.onclick=()=>showImage(img);
+  const info=document.createElement('div');info.className='info';
   const nameSpan=document.createElement('span');nameSpan.className='name';nameSpan.textContent=currentName;
-  nameSpan.addEventListener('click',()=>startEdit(nameSpan,async(old,val)=>{
-    const nn=await renameShot(currentName,val);
-    if(nn){currentName=nn;nameSpan.textContent=nn;img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;}
-  }));
   const timeSpan=document.createElement('span');timeSpan.className='time';timeSpan.dataset.t=time;timeSpan.textContent=time.toFixed(2)+'s';
-  const jump=document.createElement('button');jump.textContent='跳转';jump.onclick=()=>{video.currentTime=time;};
+  info.append(nameSpan,timeSpan);
+  let clickTimer=null;
+  info.addEventListener('click',()=>{
+    clickTimer=setTimeout(()=>{video.currentTime=time;clickTimer=null;},200);
+  });
+  info.addEventListener('dblclick',()=>{
+    if(clickTimer){clearTimeout(clickTimer);clickTimer=null;}
+    startEdit(nameSpan,async(old,val)=>{
+      const nn=await renameShot(currentName,val);
+      if(nn){currentName=nn;nameSpan.textContent=nn;img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;}
+    });
+  });
   const del=document.createElement('button');del.textContent='删除';del.onclick=async()=>{
     if(!confirm('删除?'))return;
     await fetch(`${snapUrl}/${encodeURIComponent(currentName)}/delete`,{method:'POST'});
     div.remove();
     refreshItems();
   };
-  div.append(img,nameSpan,timeSpan,jump,del);
+  div.append(img,info,del);
   shots.appendChild(div);
   sortShots();
 }
