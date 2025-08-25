@@ -7,7 +7,8 @@
   <style>
     body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
     #video{flex:1;background:#000;}
-    #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;}
+    #divider{width:4px;background:#ddd;cursor:col-resize;flex:none;}
+    #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;flex:none;}
     #help{font-size:.85rem;margin-bottom:8px;color:#333;}
     #list{display:flex;flex-direction:column;gap:8px;}
     .shot{display:flex;align-items:center;gap:4px;}
@@ -25,6 +26,7 @@
 </head>
 <body>
   <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+  <div id='divider'></div>
   <div id='shots'>
     <div id='help'>快捷键: F/D/S/A 后退0.5/1/3/5秒，J/K/L/; 前进0.5/1/3/5秒，空格 播放/暂停，回车 保存截图</div>
     <div id='list'></div>
@@ -36,13 +38,14 @@
   </div>
 <script>
 const video=document.getElementById('video');
+const divider=document.getElementById('divider');
 const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
 const shots=document.getElementById('list');
 const items=[];
-let idx=-1,scale=1,offX=0,offY=0;
+let idx=-1,scale=1,offX=0,offY=0,splitDrag=false;
 function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
-document.addEventListener('keydown',e=>{
-  if(e.target.tagName==='INPUT')return;
+function handleKey(e){
+  if(e.target.tagName==='INPUT' && e.target.type==='text')return;
   const k=e.key.toLowerCase();
   if(k==='f')seek(-0.5);
   else if(k==='d')seek(-1);
@@ -54,7 +57,17 @@ document.addEventListener('keydown',e=>{
   else if(k===';'||k===':')seek(5);
   else if(e.code==='Space'){e.preventDefault();video.paused?video.play():video.pause();}
   else if(e.key==='Enter'){e.preventDefault();capture();}
+}
+document.addEventListener('keydown',handleKey,true);
+divider.addEventListener('mousedown',e=>{splitDrag=true;document.body.style.userSelect='none';e.preventDefault();});
+document.addEventListener('mousemove',e=>{
+  if(!splitDrag)return;
+  const w=window.innerWidth-e.clientX;
+  const min=200,max=window.innerWidth-200;
+  const width=Math.min(Math.max(w,min),max);
+  document.getElementById('shots').style.width=width+'px';
 });
+document.addEventListener('mouseup',()=>{splitDrag=false;document.body.style.userSelect='';});
 async function capture(){
   const c=document.createElement('canvas');
   c.width=video.videoWidth;c.height=video.videoHeight;
