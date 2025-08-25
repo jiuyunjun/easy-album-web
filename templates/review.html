@@ -5,6 +5,7 @@
   <title>{{ filename }} - Review</title>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <style>
+    :root{--primary:#1976d2;}
     body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
     #video{flex:1;background:#000;}
     #divider{width:4px;background:#ddd;cursor:col-resize;flex:none;}
@@ -12,12 +13,13 @@
     #toolbar{margin-bottom:8px;text-align:right;}
     #help{font-size:.85rem;margin-bottom:8px;color:#333;}
     #list{display:flex;flex-direction:column;gap:8px;}
-    .shot{display:flex;align-items:center;gap:4px;}
-    .shot img{width:80px;height:80px;object-fit:cover;cursor:pointer;border-radius:4px;}
-    .shot .info{flex:1;display:flex;align-items:center;gap:4px;cursor:pointer;}
-    .shot .name{flex:1;font-size:.8rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .shot{display:flex;align-items:center;gap:4px;cursor:pointer;}
+    .shot img{width:80px;height:80px;object-fit:contain;background:#000;cursor:pointer;border-radius:4px;}
+    .shot .info{flex:1;display:flex;align-items:center;gap:4px;}
+    .shot .name{flex:1;font-size:.8rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
     .shot .time{font-size:.8rem;}
     .shot button{margin-left:2px;}
+    button,.btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;cursor:pointer;font:1rem/1.2 system-ui,Arial,sans-serif;}
     #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
     #overlay img{max-width:90vw;max-height:90vh;border-radius:6px;transition:transform .2s;}
     #overlay img.dragging{transition:none;}
@@ -30,7 +32,7 @@
   <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
   <div id='divider'></div>
   <div id='shots'>
-    <div id='toolbar'><button id='delAll'>全部删除</button></div>
+    <div id='toolbar'><button id='delAll' class='btn'>全部删除</button></div>
     <div id='help'>快捷键: F/D/S/A 后退0.5/1/3/5秒，J/K/L/; 前进0.5/1/3/5秒，空格 播放/暂停，回车 保存截图</div>
     <div id='list'></div>
   </div>
@@ -134,28 +136,39 @@ function startEdit(span,cb){
 function addShot(name,time){
   let currentName=name;
   const div=document.createElement('div');div.className='shot';
-  const img=document.createElement('img');img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;img.onclick=()=>showImage(img);
+  const img=document.createElement('img');
+  img.src=`${snapUrl}/${currentName}`;
+  img.dataset.full=img.src;
+  img.addEventListener('click',e=>{e.stopPropagation();showImage(img);});
+
   const info=document.createElement('div');info.className='info';
   const nameSpan=document.createElement('span');nameSpan.className='name';nameSpan.textContent=currentName;
-  const timeSpan=document.createElement('span');timeSpan.className='time';timeSpan.dataset.t=time;timeSpan.textContent=time.toFixed(2)+'s';
-  info.append(nameSpan,timeSpan);
-  let clickTimer=null;
-  info.addEventListener('click',()=>{
-    clickTimer=setTimeout(()=>{video.currentTime=time;clickTimer=null;},200);
-  });
-  info.addEventListener('dblclick',()=>{
-    if(clickTimer){clearTimeout(clickTimer);clickTimer=null;}
+  nameSpan.addEventListener('click',e=>{
+    e.stopPropagation();
     startEdit(nameSpan,async(old,val)=>{
       const nn=await renameShot(currentName,val);
       if(nn){currentName=nn;nameSpan.textContent=nn;img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;}
     });
   });
-  const del=document.createElement('button');del.textContent='删除';del.onclick=async()=>{
+  const timeSpan=document.createElement('span');timeSpan.className='time';timeSpan.dataset.t=time;timeSpan.textContent=time.toFixed(2)+'s';
+  info.append(nameSpan,timeSpan);
+
+  const del=document.createElement('button');
+  del.className='btn';
+  del.textContent='删除';
+  del.addEventListener('click',async e=>{
+    e.stopPropagation();
     if(!confirm('删除?'))return;
     await fetch(`${snapUrl}/${encodeURIComponent(currentName)}/delete`,{method:'POST'});
     div.remove();
     refreshItems();
-  };
+  });
+
+  div.addEventListener('click',e=>{
+    if(e.target===nameSpan||e.target===del||e.target.tagName==='INPUT')return;
+    video.currentTime=time;
+  });
+
   div.append(img,info,del);
   shots.appendChild(div);
   sortShots();
