@@ -71,7 +71,7 @@
 {% endif %}{% endwith %}
 <div class='grid'>
 {% for f in files %}{% set ext=f.name.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}
-  <video src='{{ url_for("stream", album_name=album, filename=f.name) }}#t=0.1' data-full='{{ url_for("stream", album_name=album, filename=f.name) }}' preload='metadata' muted onclick='showVideo(this)'></video>
+  <video src='{{ url_for("stream", album_name=album, filename=f.name) }}#t=0.1' preload='metadata' muted onclick="location.href='{{ url_for('review', album_name=album, filename=f.name) }}'"></video>
 {% elif ext in ['dng','raw','nef','cr2','arw','rw2'] %}
   <img src='{{ url_for("thumb", album_name=album, filename=f.name) }}' data-full='{{ url_for("preview", album_name=album, filename=f.name) }}' onclick='showImage(this)'>
 {% else %}
@@ -92,7 +92,6 @@
 <div id='overlay'>
   <button id='prev' class='nav' onclick='event.stopPropagation();prev()'>&lsaquo;</button>
   <img>
-  <video controls style='display:none'></video>
   <button id='next' class='nav' onclick='event.stopPropagation();next()'>&rsaquo;</button>
 </div>
 <script>
@@ -174,16 +173,23 @@ function renameAlbum(){
     body:JSON.stringify({name})
   }).then(r=>r.json()).then(d=>{if(d.ok){location.href='/'+encodeURIComponent(d.new);}else{alert('重命名失败');}});
 }
-const items=[...document.querySelectorAll('.grid img, .grid video')];
+const items=[...document.querySelectorAll('.grid img')];
 let idx=-1,scale=1,offX=0,offY=0;
 function updateTransform(){
   const img=document.querySelector('#overlay img');
   img.style.transform=`translate(${offX}px,${offY}px) scale(${scale})`;
 }
-function showAt(i){if(i<0||i>=items.length)return;idx=i;scale=1;offX=0;offY=0;const it=items[i];const o=document.getElementById('overlay');const img=o.querySelector('img');const v=o.querySelector('video');if(it.tagName.toLowerCase()==='video'){img.style.display='none';img.src='';v.style.display='block';v.src=it.dataset.full;o.style.display='flex';v.play();}else{v.pause();v.style.display='none';v.src='';img.style.display='block';img.src=it.dataset.full;o.style.display='flex';updateTransform();}}
+function showAt(i){
+  if(i<0||i>=items.length)return;
+  idx=i;scale=1;offX=0;offY=0;
+  const o=document.getElementById('overlay');
+  const img=o.querySelector('img');
+  img.src=items[i].dataset.full;
+  o.style.display='flex';
+  updateTransform();
+}
 function showImage(el){showAt(items.indexOf(el));}
-function showVideo(el){showAt(items.indexOf(el));}
-function hide(){const o=document.getElementById('overlay');o.style.display='none';const v=o.querySelector('video');v.pause();v.src='';idx=-1;}
+function hide(){const o=document.getElementById('overlay');o.style.display='none';idx=-1;}
 function next(){if(idx<items.length-1)showAt(idx+1);}
 function prev(){if(idx>0)showAt(idx-1);}
 document.addEventListener('keydown',e=>{const o=document.getElementById('overlay');if(o.style.display!=='flex')return;if(e.key==='ArrowRight'){next();e.preventDefault();}else if(e.key==='ArrowLeft'){prev();e.preventDefault();}});
@@ -213,7 +219,7 @@ document.addEventListener('mouseup',()=>{
   dragging=false;
   imgEl.classList.remove('dragging');
 });
-overlay.addEventListener('wheel',e=>{if(imgEl.style.display==='none')return;e.preventDefault();const rect=imgEl.getBoundingClientRect();const cx=e.clientX-(rect.left+rect.width/2);const cy=e.clientY-(rect.top+rect.height/2);const old=scale;scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);const ratio=scale/old;offX-=cx*(ratio-1);offY-=cy*(ratio-1);updateTransform();},{passive:false});
+overlay.addEventListener('wheel',e=>{e.preventDefault();const rect=imgEl.getBoundingClientRect();const cx=e.clientX-(rect.left+rect.width/2);const cy=e.clientY-(rect.top+rect.height/2);const old=scale;scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);const ratio=scale/old;offX-=cx*(ratio-1);offY-=cy*(ratio-1);updateTransform();},{passive:false});
 </script>
 </body>
 </html>

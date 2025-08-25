@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang='zh-CN'>
+<head>
+  <meta charset='utf-8'>
+  <title>{{ filename }} - Review</title>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <style>
+    body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
+    #video{flex:1;background:#000;}
+    #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;gap:8px;}
+    .shot{display:flex;align-items:center;gap:4px;}
+    .shot img{width:80px;height:45px;object-fit:cover;cursor:pointer;border-radius:4px;}
+    .shot .time{font-size:.8rem;}
+    .shot button{margin-left:2px;}
+  </style>
+</head>
+<body>
+  <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+  <div id='shots'></div>
+<script>
+const video=document.getElementById('video');
+const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
+function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  const k=e.key.toLowerCase();
+  if(k==='f')seek(-0.5);
+  else if(k==='d')seek(-1);
+  else if(k==='s')seek(-3);
+  else if(k==='a')seek(-5);
+  else if(k==='j')seek(0.5);
+  else if(k==='k')seek(1);
+  else if(k==='l')seek(3);
+  else if(k===';'||k===':')seek(5);
+  else if(e.code==='Space'){e.preventDefault();video.paused?video.play():video.pause();}
+  else if(e.key==='Enter'){capture();}
+});
+async function capture(){
+  const c=document.createElement('canvas');
+  c.width=video.videoWidth;c.height=video.videoHeight;
+  c.getContext('2d').drawImage(video,0,0,c.width,c.height);
+  const data=c.toDataURL('image/jpeg');
+  const t=video.currentTime;
+  const res=await fetch(snapUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:t,image:data})});
+  const info=await res.json();
+  if(info.ok)addShot(info.name,t);
+}
+async function loadShots(){
+  const res=await fetch(snapUrl);
+  const arr=await res.json();
+  arr.forEach(s=>addShot(s.name,s.time));
+}
+function addShot(name,time){
+  const div=document.createElement('div');div.className='shot';
+  const img=document.createElement('img');img.src=`${snapUrl}/${name}`;img.onclick=()=>window.open(img.src,'_blank');
+  const span=document.createElement('span');span.className='time';span.dataset.t=time;span.textContent=time.toFixed(2)+'s';
+  const jump=document.createElement('button');jump.textContent='跳转';jump.onclick=()=>{video.currentTime=time;};
+  const rename=document.createElement('button');rename.textContent='改名';rename.onclick=async()=>{
+    const nn=prompt('新名称',name);if(!nn)return;
+    const r=await fetch(`${snapUrl}/${encodeURIComponent(name)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nn})});
+    const d=await r.json();if(d.ok){name=d.name;img.src=`${snapUrl}/${name}`;}
+  };
+  const del=document.createElement('button');del.textContent='删除';del.onclick=async()=>{
+    if(!confirm('删除?'))return;
+    await fetch(`${snapUrl}/${encodeURIComponent(name)}/delete`,{method:'POST'});
+    div.remove();
+  };
+  div.append(img,span,jump,rename,del);
+  const shots=document.getElementById('shots');
+  shots.appendChild(div);
+  [...shots.children].sort((a,b)=>parseFloat(a.querySelector('.time').dataset.t)-parseFloat(b.querySelector('.time').dataset.t)).forEach(n=>shots.appendChild(n));
+}
+loadShots();
+</script>
+</body>
+</html>
