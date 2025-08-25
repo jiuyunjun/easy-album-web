@@ -7,19 +7,39 @@
   <style>
     body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
     #video{flex:1;background:#000;}
-    #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;gap:8px;}
+    #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;}
+    #help{font-size:.85rem;margin-bottom:8px;color:#333;}
+    #list{display:flex;flex-direction:column;gap:8px;}
     .shot{display:flex;align-items:center;gap:4px;}
-    .shot img{width:80px;height:45px;object-fit:cover;cursor:pointer;border-radius:4px;}
-    .shot .time{font-size:.8rem;}
+    .shot img{width:80px;height:80px;object-fit:cover;cursor:pointer;border-radius:4px;}
+    .shot .name{flex:1;cursor:pointer;font-size:.8rem;}
+    .shot .time{font-size:.8rem;margin-left:4px;}
     .shot button{margin-left:2px;}
+    #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
+    #overlay img{max-width:90vw;max-height:90vh;border-radius:6px;transition:transform .2s;}
+    #overlay img.dragging{transition:none;}
+    #overlay .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;font-size:2rem;padding:.5rem;border-radius:50%;cursor:pointer;user-select:none;}
+    #overlay #prev{left:1rem;}
+    #overlay #next{right:1rem;}
   </style>
 </head>
 <body>
   <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
-  <div id='shots'></div>
+  <div id='shots'>
+    <div id='help'>快捷键: F/D/S/A 后退0.5/1/3/5秒，J/K/L/; 前进0.5/1/3/5秒，空格 播放/暂停，回车 保存截图</div>
+    <div id='list'></div>
+  </div>
+  <div id='overlay'>
+    <button id='prev' class='nav' onclick='event.stopPropagation();prev()'>&lsaquo;</button>
+    <img>
+    <button id='next' class='nav' onclick='event.stopPropagation();next()'>&rsaquo;</button>
+  </div>
 <script>
 const video=document.getElementById('video');
 const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
+const shots=document.getElementById('list');
+const items=[];
+let idx=-1,scale=1,offX=0,offY=0;
 function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
@@ -50,26 +70,90 @@ async function loadShots(){
   const arr=await res.json();
   arr.forEach(s=>addShot(s.name,s.time));
 }
-function addShot(name,time){
-  const div=document.createElement('div');div.className='shot';
-  const img=document.createElement('img');img.src=`${snapUrl}/${name}`;img.onclick=()=>window.open(img.src,'_blank');
-  const span=document.createElement('span');span.className='time';span.dataset.t=time;span.textContent=time.toFixed(2)+'s';
-  const jump=document.createElement('button');jump.textContent='跳转';jump.onclick=()=>{video.currentTime=time;};
-  const rename=document.createElement('button');rename.textContent='改名';rename.onclick=async()=>{
-    const nn=prompt('新名称',name);if(!nn)return;
-    const r=await fetch(`${snapUrl}/${encodeURIComponent(name)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nn})});
-    const d=await r.json();if(d.ok){name=d.name;img.src=`${snapUrl}/${name}`;}
+function refreshItems(){items.splice(0,items.length,...document.querySelectorAll('#list img'));}
+function sortShots(){
+  [...shots.children].sort((a,b)=>parseFloat(a.querySelector('.time').dataset.t)-parseFloat(b.querySelector('.time').dataset.t)).forEach(n=>shots.appendChild(n));
+  refreshItems();
+}
+async function renameShot(oldName,newName){
+  const r=await fetch(`${snapUrl}/${encodeURIComponent(oldName)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})});
+  const d=await r.json();
+  if(d.ok)return d.name;
+  alert('改名失败');
+  return null;
+}
+function startEdit(span,cb){
+  if(span.dataset.editing)return;
+  span.dataset.editing='1';
+  const old=span.textContent;
+  const input=document.createElement('input');
+  input.type='text';
+  input.value=old;
+  input.style.width='100%';
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish=async(doRename)=>{
+    input.replaceWith(span);
+    span.dataset.editing='';
+    const val=input.value.trim();
+    if(doRename&&val&&val!==old){
+      await cb(old,val);
+    }else{
+      span.textContent=old;
+    }
   };
+  input.addEventListener('blur',()=>finish(true));
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){input.blur();}
+    else if(e.key==='Escape'){input.value=old;finish(false);}
+  });
+}
+function addShot(name,time){
+  let currentName=name;
+  const div=document.createElement('div');div.className='shot';
+  const img=document.createElement('img');img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;img.onclick=()=>showImage(img);
+  const nameSpan=document.createElement('span');nameSpan.className='name';nameSpan.textContent=currentName;
+  nameSpan.addEventListener('click',()=>startEdit(nameSpan,async(old,val)=>{
+    const nn=await renameShot(currentName,val);
+    if(nn){currentName=nn;nameSpan.textContent=nn;img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;}
+  }));
+  const timeSpan=document.createElement('span');timeSpan.className='time';timeSpan.dataset.t=time;timeSpan.textContent=time.toFixed(2)+'s';
+  const jump=document.createElement('button');jump.textContent='跳转';jump.onclick=()=>{video.currentTime=time;};
   const del=document.createElement('button');del.textContent='删除';del.onclick=async()=>{
     if(!confirm('删除?'))return;
-    await fetch(`${snapUrl}/${encodeURIComponent(name)}/delete`,{method:'POST'});
+    await fetch(`${snapUrl}/${encodeURIComponent(currentName)}/delete`,{method:'POST'});
     div.remove();
+    refreshItems();
   };
-  div.append(img,span,jump,rename,del);
-  const shots=document.getElementById('shots');
+  div.append(img,nameSpan,timeSpan,jump,del);
   shots.appendChild(div);
-  [...shots.children].sort((a,b)=>parseFloat(a.querySelector('.time').dataset.t)-parseFloat(b.querySelector('.time').dataset.t)).forEach(n=>shots.appendChild(n));
+  sortShots();
 }
+function showAt(i){
+  if(i<0||i>=items.length)return;
+  idx=i;scale=1;offX=0;offY=0;
+  const o=document.getElementById('overlay');
+  const img=o.querySelector('img');
+  img.src=items[i].dataset.full;
+  o.style.display='flex';
+  updateTransform();
+}
+function showImage(el){showAt(items.indexOf(el));}
+function hide(){const o=document.getElementById('overlay');o.style.display='none';idx=-1;}
+function next(){if(idx<items.length-1)showAt(idx+1);}
+function prev(){if(idx>0)showAt(idx-1);}
+function updateTransform(){const img=document.querySelector('#overlay img');img.style.transform=`translate(${offX}px,${offY}px) scale(${scale})`;}
+document.addEventListener('keydown',e=>{const o=document.getElementById('overlay');if(o.style.display!=='flex')return;if(e.key==='ArrowRight'){next();e.preventDefault();}else if(e.key==='ArrowLeft'){prev();e.preventDefault();}});
+const overlay=document.getElementById('overlay');
+const imgEl=document.querySelector('#overlay img');
+let dragging=false,lastX=0,lastY=0;
+imgEl.addEventListener('mousedown',e=>{if(e.button!==0)return;dragging=true;imgEl.classList.add('dragging');lastX=e.clientX;lastY=e.clientY;e.preventDefault();e.stopPropagation();});
+imgEl.addEventListener('click',e=>e.stopPropagation());
+overlay.addEventListener('click',e=>{if(e.target===overlay)hide();});
+document.addEventListener('mousemove',e=>{if(!dragging)return;offX+=e.clientX-lastX;offY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;updateTransform();});
+document.addEventListener('mouseup',()=>{dragging=false;imgEl.classList.remove('dragging');});
+overlay.addEventListener('wheel',e=>{e.preventDefault();const rect=imgEl.getBoundingClientRect();const cx=e.clientX-(rect.left+rect.width/2);const cy=e.clientY-(rect.top+rect.height/2);const old=scale;scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);const ratio=scale/old;offX-=cx*(ratio-1);offY-=cy*(ratio-1);updateTransform();},{passive:false});
 loadShots();
 </script>
 </body>

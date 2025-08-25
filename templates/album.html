@@ -71,7 +71,9 @@
 {% endif %}{% endwith %}
 <div class='grid'>
 {% for f in files %}{% set ext=f.name.split('.')[-1]|lower %}<figure>{% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}
-  <video src='{{ url_for("stream", album_name=album, filename=f.name) }}#t=0.1' preload='metadata' muted onclick="location.href='{{ url_for('review', album_name=album, filename=f.name) }}'"></video>
+  <a href='{{ url_for('review', album_name=album, filename=f.name) }}' target='_blank'>
+    <video src='{{ url_for("stream", album_name=album, filename=f.name) }}#t=0.1' preload='metadata' muted></video>
+  </a>
 {% elif ext in ['dng','raw','nef','cr2','arw','rw2'] %}
   <img src='{{ url_for("thumb", album_name=album, filename=f.name) }}' data-full='{{ url_for("preview", album_name=album, filename=f.name) }}' onclick='showImage(this)'>
 {% else %}
