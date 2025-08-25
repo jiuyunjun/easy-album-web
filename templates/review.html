@@ -12,7 +12,7 @@
     #list{display:flex;flex-direction:column;gap:8px;}
     .shot{display:flex;align-items:center;gap:4px;}
     .shot img{width:80px;height:80px;object-fit:cover;cursor:pointer;border-radius:4px;}
-    .shot .name{flex:1;cursor:pointer;font-size:.8rem;}
+    .shot .name{flex:1;cursor:pointer;font-size:.8rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .shot .time{font-size:.8rem;margin-left:4px;}
     .shot button{margin-left:2px;}
     #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
@@ -53,7 +53,7 @@ document.addEventListener('keydown',e=>{
   else if(k==='l')seek(3);
   else if(k===';'||k===':')seek(5);
   else if(e.code==='Space'){e.preventDefault();video.paused?video.play():video.pause();}
-  else if(e.key==='Enter'){capture();}
+  else if(e.key==='Enter'){e.preventDefault();capture();}
 });
 async function capture(){
   const c=document.createElement('canvas');
