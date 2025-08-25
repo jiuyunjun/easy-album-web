@@ -57,6 +57,7 @@ let idx=-1,scale=1,offX=0,offY=0,splitDrag=false;
 function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
 function handleKey(e){
   if(e.target.tagName==='INPUT' && e.target.type==='text')return;
+  e.stopPropagation();
   const k=e.key.toLowerCase();
   if(k==='f')seek(-0.5);
   else if(k==='d')seek(-1);
@@ -67,7 +68,7 @@ function handleKey(e){
   else if(k==='l')seek(3);
   else if(k===';'||k===':')seek(5);
   else if(e.code==='Space'){e.preventDefault();video.paused?video.play():video.pause();}
-  else if(e.key==='Enter'){e.preventDefault();capture();}
+  else if(e.key==='Enter'){e.preventDefault();capture();document.activeElement.blur();}
 }
 document.addEventListener('keydown',handleKey,true);
 divider.addEventListener('mousedown',e=>{splitDrag=true;document.body.style.userSelect='none';e.preventDefault();});
