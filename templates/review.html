@@ -8,7 +8,8 @@
     :root{--primary:#1976d2;}
     body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
     #player{flex:1;display:flex;flex-direction:column;}
-    #video{flex:1;background:#000;}
+    #videoWrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;}
+    #video{max-width:100%;max-height:100%;}
     #controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px;background:#222;}
     #divider{width:4px;background:#ddd;cursor:col-resize;flex:none;}
     #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;flex:none;}
@@ -32,7 +33,9 @@
 </head>
 <body>
   <div id='player'>
-    <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+    <div id='videoWrap'>
+      <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+    </div>
     <div id='controls'>
       <button class='btn' data-seek='-5'>-5s</button>
       <button class='btn' data-seek='-3'>-3s</button>
