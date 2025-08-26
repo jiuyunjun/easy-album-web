@@ -109,11 +109,15 @@ document.getElementById('delAll').onclick=async()=>{
 };
 autoBtn.addEventListener('click',async()=>{
   if(autoBtn.disabled) return;
+  const val=prompt('请输入分场景阈值(默认27，越大越保守)','27');
+  if(val===null) return;
+  const t=parseFloat(val);
+  const threshold=isNaN(t)?27:t;
   autoBtn.disabled=true;
   progress.value=0;progress.max=1;progress.textContent='0%';
   progress.style.display='block';
   try{
-    const r=await fetch(snapUrl+'/auto',{method:'POST'});
+    const r=await fetch(snapUrl+'/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({threshold})});
     const info=await r.json().catch(()=>({}));
     if(!r.ok||!info.ok) throw new Error(info.msg||'分场景失败');
   }catch(e){

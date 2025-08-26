@@ -336,7 +336,7 @@ def review_snapshot_delete_all(album_name, filename):
     return jsonify({'ok': True})
 
 
-def _auto_split_worker(album: str, fname: str):
+def _auto_split_worker(album: str, fname: str, threshold: float):
     """Background worker performing scene detection and snapshot saving."""
     key = f"{album}/{fname}"
     src = os.path.join(UPLOAD_ROOT, album, fname)
@@ -352,7 +352,7 @@ def _auto_split_worker(album: str, fname: str):
 
     video_manager = VideoManager([src])
     scene_manager = SceneManager()
-    scene_manager.add_detector(ContentDetector(threshold=26.0))
+    scene_manager.add_detector(ContentDetector(threshold=threshold))
     video_manager.start()
     scene_manager.detect_scenes(frame_source=video_manager)
     scene_list = scene_manager.get_scene_list()
@@ -422,9 +422,16 @@ def review_snapshot_auto(album_name, filename):
     key = f"{album}/{fname}"
     if key in AUTO_PROGRESS:
         return jsonify({'ok': False, 'msg': 'busy'}), 409
+
+    data = request.get_json(silent=True) or {}
+    try:
+        threshold = float(data.get('threshold', 27))
+    except Exception:
+        threshold = 27.0
+
     AUTO_PROGRESS[key] = 0.0
     AUTO_RESULT.pop(key, None)
-    executor.submit(_auto_split_worker, album, fname)
+    executor.submit(_auto_split_worker, album, fname, threshold)
     return jsonify({'ok': True})
 
 
