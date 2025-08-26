@@ -105,25 +105,47 @@ document.getElementById('shotBtn').addEventListener('click',capture);
 document.getElementById('delAll').onclick=async()=>{
   if(!confirm('全部删除?'))return;
   await fetch(snapUrl+'/delete_all',{method:'POST'});
-  shots.innerHTML='';
-  refreshItems();
+  await loadShots();
 };
 autoBtn.addEventListener('click',async()=>{
   if(autoBtn.disabled) return;
   autoBtn.disabled=true;
+  progress.value=0;progress.max=1;progress.textContent='0%';
   progress.style.display='block';
   try{
     const r=await fetch(snapUrl+'/auto',{method:'POST'});
     const info=await r.json().catch(()=>({}));
-    if(r.ok){
-      if(!info.ok || !info.saved) alert('未检测到场景');
-    }else{
-      alert(info.msg||'分场景失败');
+    if(!r.ok||!info.ok) throw new Error(info.msg||'分场景失败');
+  }catch(e){
+    alert(e.message||'分场景失败');
+    progress.style.display='none';
+    autoBtn.disabled=false;
+    return;
+  }
+  const timer=setInterval(async()=>{
+    try{
+      const r=await fetch(snapUrl+'/auto/progress',{cache:'no-store'});
+      const info=await r.json();
+      if(!r.ok){throw new Error();}
+      progress.value=info.progress;
+      progress.textContent=Math.round(info.progress*100)+'%';
+      if(info.done){
+        clearInterval(timer);
+        progress.style.display='none';
+        progress.textContent='';
+        autoBtn.disabled=false;
+        if(!info.ok) alert(info.msg||'分场景失败');
+        else if(!info.saved) alert('未检测到场景');
+        await loadShots();
+      }
+    }catch(e){
+      clearInterval(timer);
+      progress.style.display='none';
+      progress.textContent='';
+      autoBtn.disabled=false;
+      alert('分场景失败');
     }
-  }catch(e){alert('分场景失败');}
-  await loadShots();
-  progress.style.display='none';
-  autoBtn.disabled=false;
+  },500);
 });
 let idx=-1,scale=1,offX=0,offY=0,splitDrag=false;
 function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}

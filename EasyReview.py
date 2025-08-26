@@ -36,6 +36,8 @@ os.makedirs(UPLOAD_ROOT, exist_ok=True)
 THUMB_DIR = ".thumbs"
 THUMB_SIZE = (320, 320)
 executor = ThreadPoolExecutor(max_workers=4)
+AUTO_PROGRESS = {}
+AUTO_RESULT = {}
 PLACEHOLDER = (
     b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00"
     b"\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
@@ -334,22 +336,19 @@ def review_snapshot_delete_all(album_name, filename):
     return jsonify({'ok': True})
 
 
-@app.route("/<album_name>/review/<path:filename>/snapshots/auto", methods=['POST'])
-def review_snapshot_auto(album_name, filename):
-    """Automatically split video into scenes and save mid-frame snapshots."""
-    album = safe_album(album_name)
-    fname = sanitize_filename(filename)
+def _auto_split_worker(album: str, fname: str):
+    """Background worker performing scene detection and snapshot saving."""
+    key = f"{album}/{fname}"
     src = os.path.join(UPLOAD_ROOT, album, fname)
-    if not os.path.isfile(src):
-        abort(404)
     out_dir = snapshot_dir(album, fname)
-
     try:
         from scenedetect import VideoManager, SceneManager
         from scenedetect.detectors import ContentDetector
         import cv2
     except Exception:
-        return jsonify({'ok': False, 'msg': 'missing dependency'}), 500
+        AUTO_RESULT[key] = {'ok': False, 'msg': 'missing dependency', 'saved': 0}
+        AUTO_PROGRESS.pop(key, None)
+        return
 
     video_manager = VideoManager([src])
     scene_manager = SceneManager()
@@ -361,17 +360,20 @@ def review_snapshot_auto(album_name, filename):
 
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
-        return jsonify({'ok': False, 'msg': 'open failed'}), 500
+        AUTO_RESULT[key] = {'ok': False, 'msg': 'open failed', 'saved': 0}
+        AUTO_PROGRESS.pop(key, None)
+        return
     fps = cap.get(cv2.CAP_PROP_FPS)
     saved = 0
 
     def save_frame(path, frame):
-        """Write JPEG using a method that supports non-ASCII paths."""
         ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
         if ret:
             buf.tofile(path)
 
-    # Fallback: if no scenes are detected, capture the middle frame of the whole video.
+    # After detection done, mark half progress
+    AUTO_PROGRESS[key] = 0.5
+
     if not scene_list:
         frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         if frame_count > 0:
@@ -379,13 +381,16 @@ def review_snapshot_auto(album_name, filename):
             cap.set(cv2.CAP_PROP_POS_FRAMES, mid_f)
             ok, frame = cap.read()
             if ok and frame is not None:
-                mid_sec = mid_f / fps if fps > 0 else 0.0
-                name = f"场景1_{mid_sec:.3f}.jpg"
+                actual = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0 if fps > 0 else 0.0
+                name = f"场景1_{actual:.3f}.jpg"
                 save_frame(os.path.join(out_dir, name), frame)
                 saved = 1
         cap.release()
-        return jsonify({'ok': True, 'saved': saved})
+        AUTO_RESULT[key] = {'ok': True, 'saved': saved}
+        AUTO_PROGRESS.pop(key, None)
+        return
 
+    total = len(scene_list)
     for i, (start_tc, end_tc) in enumerate(scene_list, start=1):
         start_f = start_tc.get_frames()
         end_f = end_tc.get_frames()
@@ -396,12 +401,42 @@ def review_snapshot_auto(album_name, filename):
         ok, frame = cap.read()
         if not ok or frame is None:
             continue
-        mid_sec = mid_f / fps if fps > 0 else 0.0
-        name = f"场景{i}_{mid_sec:.3f}.jpg"
+        actual = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0 if fps > 0 else 0.0
+        name = f"场景{i}_{actual:.3f}.jpg"
         save_frame(os.path.join(out_dir, name), frame)
         saved += 1
+        AUTO_PROGRESS[key] = 0.5 + 0.5 * (i / total)
     cap.release()
-    return jsonify({'ok': True, 'saved': saved})
+    AUTO_RESULT[key] = {'ok': True, 'saved': saved}
+    AUTO_PROGRESS.pop(key, None)
+
+
+@app.route("/<album_name>/review/<path:filename>/snapshots/auto", methods=['POST'])
+def review_snapshot_auto(album_name, filename):
+    """Kick off background auto scene detection."""
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    src = os.path.join(UPLOAD_ROOT, album, fname)
+    if not os.path.isfile(src):
+        abort(404)
+    key = f"{album}/{fname}"
+    if key in AUTO_PROGRESS:
+        return jsonify({'ok': False, 'msg': 'busy'}), 409
+    AUTO_PROGRESS[key] = 0.0
+    AUTO_RESULT.pop(key, None)
+    executor.submit(_auto_split_worker, album, fname)
+    return jsonify({'ok': True})
+
+
+@app.route("/<album_name>/review/<path:filename>/snapshots/auto/progress")
+def review_snapshot_auto_progress(album_name, filename):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    key = f"{album}/{fname}"
+    p = AUTO_PROGRESS.get(key)
+    res = AUTO_RESULT.get(key, {})
+    done = p is None
+    return jsonify({'ok': True, 'progress': p if p is not None else 1.0, 'done': done, **res})
 
 
 @app.route("/<album_name>/export/<path:filename>")
