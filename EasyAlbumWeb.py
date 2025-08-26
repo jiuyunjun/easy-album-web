@@ -20,7 +20,8 @@ UPLOAD_ROOT = os.path.abspath("uploads")
 ALLOWED_EXTS = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp",
     ".dng", ".raw", ".nef", ".cr2", ".arw", ".rw2",
-    ".mp4", ".webm", ".ogg", ".avi", ".mov", ".mkv"
+    ".mp4", ".webm", ".ogg", ".avi", ".mov", ".mkv",
+    ".zip"
 }
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
 VIDEO_EXTS = {".mp4", ".webm", ".ogg", ".avi", ".mov", ".mkv"}
@@ -257,8 +258,10 @@ def review_snapshots(album_name, filename):
         items = []
         for n in os.listdir(d):
             if n.lower().endswith('.jpg'):
+                base = os.path.splitext(n)[0]
+                part = base.rsplit('_', 1)[-1]
                 try:
-                    t = float(os.path.splitext(n)[0])
+                    t = float(part)
                 except Exception:
                     t = 0.0
                 items.append({'name': n, 'time': t})
@@ -291,14 +294,16 @@ def review_snapshot_rename(album_name, filename, snap_name):
     fname = sanitize_filename(filename)
     snap = sanitize_filename(snap_name)
     data = request.get_json(force=True)
-    new = sanitize_filename(data.get('name', ''))
-    if not new.lower().endswith('.jpg'):
-        new += '.jpg'
+    prefix = sanitize_filename(data.get('prefix', ''))
     d = snapshot_dir(album, fname)
     src = os.path.join(d, snap)
-    dst = os.path.join(d, new)
     if not os.path.isfile(src):
         abort(404)
+    base = os.path.splitext(snap)[0]
+    part = base.rsplit('_', 1)[-1]
+    new_base = f"{prefix}_{part}" if prefix else part
+    new = new_base + '.jpg'
+    dst = os.path.join(d, new)
     if os.path.isfile(dst):
         return jsonify({'ok': False, 'msg': 'exists'}), 400
     os.rename(src, dst)
@@ -327,6 +332,26 @@ def review_snapshot_delete_all(album_name, filename):
             except FileNotFoundError:
                 pass
     return jsonify({'ok': True})
+
+
+@app.route("/<album_name>/export/<path:filename>")
+def export_video(album_name, filename):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    path = os.path.join(UPLOAD_ROOT, album, fname)
+    if not os.path.isfile(path) or os.path.splitext(fname)[1].lower() not in VIDEO_EXTS:
+        abort(404)
+    snap_dir = os.path.join(UPLOAD_ROOT, album, '.review', fname)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.write(path, arcname=fname)
+        if os.path.isdir(snap_dir):
+            for n in os.listdir(snap_dir):
+                if n.lower().endswith('.jpg'):
+                    z.write(os.path.join(snap_dir, n), arcname=n)
+    buf.seek(0)
+    dl = os.path.splitext(fname)[0] + '.zip'
+    return send_file(buf, as_attachment=True, download_name=dl, mimetype='application/zip')
 
 @app.route("/<album_name>/download/<path:filename>")
 def download_file_get(album_name, filename):
@@ -385,6 +410,32 @@ def album(album_name):
             if not f or f.filename=='':
                 continue
             fname=sanitize_filename(f.filename)
+            ext = os.path.splitext(fname)[1].lower()
+            if ext == '.zip':
+                try:
+                    data = f.read()
+                    with zipfile.ZipFile(io.BytesIO(data)) as z:
+                        vids = [n for n in z.namelist() if os.path.splitext(n)[1].lower() in VIDEO_EXTS]
+                        if len(vids) != 1:
+                            flash(f'压缩包缺少视频: {fname}')
+                            continue
+                        vname = sanitize_filename(os.path.basename(vids[0]))
+                        vdest = os.path.join(path, vname)
+                        with z.open(vids[0]) as vf, open(vdest, 'wb') as out:
+                            shutil.copyfileobj(vf, out)
+                        make_thumb(vdest, thumb_path(album, vname))
+                        sdir = snapshot_dir(album, vname)
+                        for n in z.namelist():
+                            if n == vids[0] or n.endswith('/'):
+                                continue
+                            if os.path.splitext(n)[1].lower() == '.jpg':
+                                bn = sanitize_filename(os.path.basename(n))
+                                with z.open(n) as sf, open(os.path.join(sdir, bn), 'wb') as out:
+                                    shutil.copyfileobj(sf, out)
+                    continue
+                except Exception:
+                    flash(f'压缩包解析失败: {fname}')
+                    continue
             if not allowed(fname):
                 flash(f'类型不允许: {fname}')
                 continue

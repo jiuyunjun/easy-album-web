@@ -149,17 +149,19 @@ function sortShots(){
   [...shots.children].sort((a,b)=>parseFloat(a.querySelector('.time').dataset.t)-parseFloat(b.querySelector('.time').dataset.t)).forEach(n=>shots.appendChild(n));
   refreshItems();
 }
-async function renameShot(oldName,newName){
-  const r=await fetch(`${snapUrl}/${encodeURIComponent(oldName)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})});
+async function renameShot(oldName,prefix){
+  const r=await fetch(`${snapUrl}/${encodeURIComponent(oldName)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefix})});
   const d=await r.json();
   if(d.ok)return d.name;
   alert('改名失败');
   return null;
 }
-function startEdit(span,cb){
+function startEditShot(span,fullName,cb){
   if(span.dataset.editing)return;
   span.dataset.editing='1';
-  const old=span.textContent;
+  const base=fullName.replace(/\.jpg$/i,'');
+  const idx=base.lastIndexOf('_');
+  const old=idx>=0?base.slice(0,idx):'';
   const input=document.createElement('input');
   input.type='text';
   input.value=old;
@@ -171,10 +173,10 @@ function startEdit(span,cb){
     input.replaceWith(span);
     span.dataset.editing='';
     const val=input.value.trim();
-    if(doRename&&val&&val!==old){
-      await cb(old,val);
+    if(doRename&&val!==old){
+      await cb(val);
     }else{
-      span.textContent=old;
+      span.textContent=fullName;
     }
   };
   input.addEventListener('blur',()=>finish(true));
@@ -195,7 +197,7 @@ function addShot(name,time){
   const nameSpan=document.createElement('span');nameSpan.className='name';nameSpan.textContent=currentName;
   nameSpan.addEventListener('click',e=>{
     e.stopPropagation();
-    startEdit(nameSpan,async(old,val)=>{
+    startEditShot(nameSpan,currentName,async(val)=>{
       const nn=await renameShot(currentName,val);
       if(nn){currentName=nn;nameSpan.textContent=nn;img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;}
     });

@@ -1,6 +1,7 @@
-import os
 import io
+import os
 import shutil
+import zipfile
 import pytest
 import sys
 
@@ -86,4 +87,36 @@ def test_rename_file(client, album_path):
     assert resp.status_code == 200
     assert os.path.isfile(os.path.join(album_path, "new.jpg"))
     assert os.path.isdir(os.path.join(album_path, ".review", "new.jpg"))
+
+
+def test_snapshot_rename_and_export(client, album_path):
+    # upload a video
+    data = {"file": (io.BytesIO(b"v"), "vid.mp4")}
+    client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    snap_dir = os.path.join(album_path, ".review", "vid.mp4")
+    os.makedirs(snap_dir, exist_ok=True)
+    snap_path = os.path.join(snap_dir, "1.000.jpg")
+    with open(snap_path, "wb") as f:
+        f.write(b"img")
+    # rename snapshot with prefix
+    resp = client.post(f"/{ALBUM}/review/vid.mp4/snapshots/1.000.jpg/rename", json={"prefix": "aaa"})
+    assert resp.status_code == 200
+    assert os.path.isfile(os.path.join(snap_dir, "aaa_1.000.jpg"))
+    # export
+    resp = client.get(f"/{ALBUM}/export/vid.mp4")
+    z = zipfile.ZipFile(io.BytesIO(resp.data))
+    assert "vid.mp4" in z.namelist()
+    assert "aaa_1.000.jpg" in z.namelist()
+
+
+def test_zip_upload_restore(client, album_path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as z:
+        z.writestr('vid.mp4', b'v')
+        z.writestr('aaa_1.000.jpg', b'i')
+    buf.seek(0)
+    data = {"file": (buf, "pack.zip")}
+    client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    assert os.path.isfile(os.path.join(album_path, "vid.mp4"))
+    assert os.path.isfile(os.path.join(album_path, ".review", "vid.mp4", "aaa_1.000.jpg"))
 

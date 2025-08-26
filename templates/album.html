@@ -87,6 +87,9 @@
   </figcaption>
   <div class="actions">
     <a class='btn' href='{{ url_for("download_file_get", album_name=album, filename=f.name) }}'>下载</a>
+    {% if ext in ['mp4','webm','ogg','avi','mov','mkv'] %}
+    <a class='btn' href='{{ url_for("export_video", album_name=album, filename=f.name) }}'>导出</a>
+    {% endif %}
     <button class='btn' onclick="delFile('{{ f.name }}')">删除</button>
   </div>
 </figure>{% endfor %}
