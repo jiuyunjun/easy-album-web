@@ -391,9 +391,22 @@ def pack_zip(album_name):
     total=len(files) or 1
     zpath=os.path.join(path, f"{album}.zip")
     def gen():
-        with zipfile.ZipFile(zpath,'w',zipfile.ZIP_DEFLATED) as z:
+        with zipfile.ZipFile(zpath,'w',zipfile.ZIP_DEFLATED) as outer:
             for i,f in enumerate(files,1):
-                z.write(os.path.join(path,f), arcname=f)
+                src=os.path.join(path,f)
+                ext=os.path.splitext(f)[1].lower()
+                if ext in VIDEO_EXTS:
+                    buf=io.BytesIO()
+                    with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
+                        z.write(src, arcname=f)
+                        sdir=os.path.join(path, '.review', f)
+                        if os.path.isdir(sdir):
+                            for n in os.listdir(sdir):
+                                if n.lower().endswith('.jpg'):
+                                    z.write(os.path.join(sdir,n), arcname=n)
+                    outer.writestr(os.path.splitext(f)[0]+'.zip', buf.getvalue())
+                else:
+                    outer.write(src, arcname=f)
                 yield f"data:{i/total:.4f}\n\n"
         yield "data:done\n\n"
     return Response(gen(), mimetype='text/event-stream')
@@ -421,10 +434,20 @@ def album(album_name):
                             continue
                         vname = sanitize_filename(os.path.basename(vids[0]))
                         vdest = os.path.join(path, vname)
+                        if os.path.exists(vdest) and request.args.get('overwrite') != '1':
+                            return jsonify({'ok': False, 'msg': 'exists'}), 409
+                        if os.path.exists(vdest):
+                            os.remove(vdest)
+                        thumb_old = thumb_path(album, vname)
+                        if os.path.exists(thumb_old):
+                            os.remove(thumb_old)
+                        sdir = os.path.join(UPLOAD_ROOT, album, '.review', vname)
+                        if os.path.isdir(sdir):
+                            shutil.rmtree(sdir, ignore_errors=True)
+                        os.makedirs(sdir, exist_ok=True)
                         with z.open(vids[0]) as vf, open(vdest, 'wb') as out:
                             shutil.copyfileobj(vf, out)
                         make_thumb(vdest, thumb_path(album, vname))
-                        sdir = snapshot_dir(album, vname)
                         for n in z.namelist():
                             if n == vids[0] or n.endswith('/'):
                                 continue
@@ -440,6 +463,16 @@ def album(album_name):
                 flash(f'类型不允许: {fname}')
                 continue
             dest=os.path.join(path, fname)
+            if os.path.exists(dest) and request.args.get('overwrite') != '1':
+                return jsonify({'ok': False, 'msg': 'exists'}), 409
+            if os.path.exists(dest):
+                os.remove(dest)
+                tp = thumb_path(album, fname)
+                if os.path.exists(tp):
+                    os.remove(tp)
+                rev = os.path.join(UPLOAD_ROOT, album, '.review', fname)
+                if os.path.isdir(rev):
+                    shutil.rmtree(rev, ignore_errors=True)
             def task(fileobj, d, name):
                 fileobj.save(d)
                 make_thumb(d, thumb_path(album, name))

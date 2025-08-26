@@ -53,12 +53,22 @@ def test_delete_and_clear(client, album_path):
 
 
 def test_pack_zip(client, album_path):
-    data = {"file": (io.BytesIO(b"xyz"), "c.jpg")}
+    data = {"file": (io.BytesIO(b"vid"), "v.mp4")}
     client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    sdir = os.path.join(album_path, ".review", "v.mp4")
+    os.makedirs(sdir, exist_ok=True)
+    with open(os.path.join(sdir, "1.jpg"), "wb") as f:
+        f.write(b"i")
     resp = client.get(f"/{ALBUM}/pack")
+    _ = resp.data
     zpath = os.path.join(album_path, f"{ALBUM}.zip")
     assert resp.status_code == 200
     assert os.path.isfile(zpath)
+    with zipfile.ZipFile(zpath) as outer:
+        assert "v.zip" in outer.namelist()
+        with zipfile.ZipFile(io.BytesIO(outer.read("v.zip"))) as inner:
+            assert "v.mp4" in inner.namelist()
+            assert "1.jpg" in inner.namelist()
 
 
 def test_rename_album(client, album_path):
@@ -87,6 +97,19 @@ def test_rename_file(client, album_path):
     assert resp.status_code == 200
     assert os.path.isfile(os.path.join(album_path, "new.jpg"))
     assert os.path.isdir(os.path.join(album_path, ".review", "new.jpg"))
+
+
+def test_upload_conflict(client, album_path):
+    data = {"file": (io.BytesIO(b"a"), "dup.jpg")}
+    client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    data_conflict = {"file": (io.BytesIO(b"a"), "dup.jpg")}
+    resp = client.post(f"/{ALBUM}", data=data_conflict, content_type="multipart/form-data")
+    assert resp.status_code == 409
+    data2 = {"file": (io.BytesIO(b"b"), "dup.jpg")}
+    resp = client.post(f"/{ALBUM}?overwrite=1", data=data2, content_type="multipart/form-data")
+    assert resp.status_code == 200
+    with open(os.path.join(album_path, "dup.jpg"), "rb") as f:
+        assert f.read() == b"b"
 
 
 def test_snapshot_rename_and_export(client, album_path):
