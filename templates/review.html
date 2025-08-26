@@ -7,7 +7,9 @@
   <style>
     :root{--primary:#1976d2;}
     body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
+    #player{flex:1;display:flex;flex-direction:column;}
     #video{flex:1;background:#000;}
+    #controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px;background:#222;}
     #divider{width:4px;background:#ddd;cursor:col-resize;flex:none;}
     #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;flex:none;}
     #toolbar{margin-bottom:8px;text-align:right;}
@@ -29,7 +31,21 @@
   </style>
 </head>
 <body>
-  <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+  <div id='player'>
+    <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+    <div id='controls'>
+      <button class='btn' data-seek='-5'>-5s</button>
+      <button class='btn' data-seek='-3'>-3s</button>
+      <button class='btn' data-seek='-1'>-1s</button>
+      <button class='btn' data-seek='-0.5'>-0.5s</button>
+      <button id='pauseBtn' class='btn'>播放</button>
+      <button id='shotBtn' class='btn'>截图</button>
+      <button class='btn' data-seek='0.5'>+0.5s</button>
+      <button class='btn' data-seek='1'>+1s</button>
+      <button class='btn' data-seek='3'>+3s</button>
+      <button class='btn' data-seek='5'>+5s</button>
+    </div>
+  </div>
   <div id='divider'></div>
   <div id='shots'>
     <div id='toolbar'><button id='delAll' class='btn'>全部删除</button></div>
@@ -47,6 +63,14 @@ const divider=document.getElementById('divider');
 const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
 const shots=document.getElementById('list');
 const items=[];
+document.querySelectorAll('#controls [data-seek]').forEach(btn=>btn.addEventListener('click',()=>seek(parseFloat(btn.dataset.seek))));
+const pauseBtn=document.getElementById('pauseBtn');
+function updatePause(){pauseBtn.textContent=video.paused?'播放':'暂停';}
+pauseBtn.addEventListener('click',()=>{video.paused?video.play():video.pause();});
+video.addEventListener('play',updatePause);
+video.addEventListener('pause',updatePause);
+updatePause();
+document.getElementById('shotBtn').addEventListener('click',capture);
 document.getElementById('delAll').onclick=async()=>{
   if(!confirm('全部删除?'))return;
   await fetch(snapUrl+'/delete_all',{method:'POST'});
