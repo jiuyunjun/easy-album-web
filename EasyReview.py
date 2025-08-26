@@ -334,6 +334,54 @@ def review_snapshot_delete_all(album_name, filename):
     return jsonify({'ok': True})
 
 
+@app.route("/<album_name>/review/<path:filename>/snapshots/auto", methods=['POST'])
+def review_snapshot_auto(album_name, filename):
+    """Automatically split video into scenes and save mid-frame snapshots."""
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    src = os.path.join(UPLOAD_ROOT, album, fname)
+    if not os.path.isfile(src):
+        abort(404)
+    out_dir = snapshot_dir(album, fname)
+
+    try:
+        from scenedetect import VideoManager, SceneManager
+        from scenedetect.detectors import ContentDetector
+        import cv2
+    except Exception:
+        return jsonify({'ok': False, 'msg': 'missing dependency'}), 500
+
+    video_manager = VideoManager([src])
+    scene_manager = SceneManager()
+    scene_manager.add_detector(ContentDetector(threshold=26.0))
+    video_manager.start()
+    scene_manager.detect_scenes(frame_source=video_manager)
+    scene_list = scene_manager.get_scene_list()
+    video_manager.release()
+
+    cap = cv2.VideoCapture(src)
+    if not cap.isOpened():
+        return jsonify({'ok': False, 'msg': 'open failed'}), 500
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    saved = 0
+    for i, (start_tc, end_tc) in enumerate(scene_list, start=1):
+        start_f = start_tc.get_frames()
+        end_f = end_tc.get_frames()
+        if end_f <= start_f:
+            continue
+        mid_f = (start_f + end_f) // 2
+        cap.set(cv2.CAP_PROP_POS_FRAMES, mid_f)
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            continue
+        mid_sec = mid_f / fps if fps > 0 else 0.0
+        name = f"场景{i}_{mid_sec:.3f}.jpg"
+        cv2.imwrite(os.path.join(out_dir, name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        saved += 1
+    cap.release()
+    return jsonify({'ok': True, 'saved': saved})
+
+
 @app.route("/<album_name>/export/<path:filename>")
 def export_video(album_name, filename):
     album = safe_album(album_name)
