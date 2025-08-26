@@ -365,6 +365,12 @@ def review_snapshot_auto(album_name, filename):
     fps = cap.get(cv2.CAP_PROP_FPS)
     saved = 0
 
+    def save_frame(path, frame):
+        """Write JPEG using a method that supports non-ASCII paths."""
+        ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        if ret:
+            buf.tofile(path)
+
     # Fallback: if no scenes are detected, capture the middle frame of the whole video.
     if not scene_list:
         frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -375,7 +381,7 @@ def review_snapshot_auto(album_name, filename):
             if ok and frame is not None:
                 mid_sec = mid_f / fps if fps > 0 else 0.0
                 name = f"场景1_{mid_sec:.3f}.jpg"
-                cv2.imwrite(os.path.join(out_dir, name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                save_frame(os.path.join(out_dir, name), frame)
                 saved = 1
         cap.release()
         return jsonify({'ok': True, 'saved': saved})
@@ -392,7 +398,7 @@ def review_snapshot_auto(album_name, filename):
             continue
         mid_sec = mid_f / fps if fps > 0 else 0.0
         name = f"场景{i}_{mid_sec:.3f}.jpg"
-        cv2.imwrite(os.path.join(out_dir, name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        save_frame(os.path.join(out_dir, name), frame)
         saved += 1
     cap.release()
     return jsonify({'ok': True, 'saved': saved})

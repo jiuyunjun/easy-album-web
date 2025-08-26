@@ -12,16 +12,17 @@
 pip install Flask Pillow
 ```
 
-### 可选  
+### 可选
 | 功能 | 包 | 安装命令 |
 |------|----|-----------|
 | RAW 预览 | rawpy imageio | `pip install rawpy imageio` |
 | 视频缩略图 | opencv-python | `pip install opencv-python` |
+| 自动分场景 | scenedetect opencv-python | `pip install scenedetect opencv-python` |
 | 生产部署 | gunicorn | `pip install gunicorn` |
 
 ## 快速运行
 ```bash
-python EasyAlbumWeb.py
+python EasyReview.py
 # 浏览器访问 http://<本机或局域网IP>:5123
 ```
 
@@ -34,7 +35,7 @@ python -m pytest -v
 - **uploads/** 上传文件根目录，子文件夹即相册名  
 - **.thumbs/** 每个相册下自动生成的缩略图缓存  
 
-> 默认单文件大小上限 5 GB，可在 `EasyAlbumWeb.py` 顶部 `MAX_CONTENT_LENGTH` 修改。
+> 默认单文件大小上限 5 GB，可在 `EasyReview.py` 顶部 `MAX_CONTENT_LENGTH` 修改。
 
 ## License
 MIT
