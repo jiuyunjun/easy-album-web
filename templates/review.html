@@ -114,7 +114,12 @@ autoBtn.addEventListener('click',async()=>{
   progress.style.display='block';
   try{
     const r=await fetch(snapUrl+'/auto',{method:'POST'});
-    if(!r.ok) alert('分场景失败');
+    if(r.ok){
+      const info=await r.json();
+      if(!info.ok || !info.saved) alert('未检测到场景');
+    }else{
+      alert('分场景失败');
+    }
   }catch(e){alert('分场景失败');}
   await loadShots();
   progress.style.display='none';

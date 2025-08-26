@@ -364,6 +364,22 @@ def review_snapshot_auto(album_name, filename):
         return jsonify({'ok': False, 'msg': 'open failed'}), 500
     fps = cap.get(cv2.CAP_PROP_FPS)
     saved = 0
+
+    # Fallback: if no scenes are detected, capture the middle frame of the whole video.
+    if not scene_list:
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if frame_count > 0:
+            mid_f = int(frame_count // 2)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, mid_f)
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                mid_sec = mid_f / fps if fps > 0 else 0.0
+                name = f"场景1_{mid_sec:.3f}.jpg"
+                cv2.imwrite(os.path.join(out_dir, name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                saved = 1
+        cap.release()
+        return jsonify({'ok': True, 'saved': saved})
+
     for i, (start_tc, end_tc) in enumerate(scene_list, start=1):
         start_f = start_tc.get_frames()
         end_f = end_tc.get_frames()
