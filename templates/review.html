@@ -5,14 +5,36 @@
   <title>{{ filename }} - Review</title>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     :root{--primary:#1976d2;}
-    body{margin:0;font-family:system-ui,Arial,sans-serif;display:flex;height:100vh;}
-    #player{flex:1;display:flex;flex-direction:column;height:100vh;}
-    #videoWrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;width:100%;}
-    #video{width:100%;height:100%;object-fit:contain;}
+    body{ margin:0; font-family:system-ui,Arial,sans-serif; display:flex; height:100dvh; }
+    #player{
+  flex:1; display:flex; flex-direction:column;
+  /* 删掉 height:100vh; 让它继承父容器高度 */
+  min-height:0; /* 2) 关键：允许子项在 flex 中被压缩 */
+}
+
+#videoWrap{
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#000; width:100%;
+  min-height:0;     /* 2) 同理，防止被视频控件撑高 */
+  overflow:hidden;  /* 细节：缩放/contain 时不溢出 */
+}
+
+/* 3) 约束 video，不强行 height:100% */
+#video{
+  max-width:100%;
+  max-height:100%;
+  width:100%;
+  height:auto;          /* 关键：让浏览器按比例算高，控件也不会再额外挤出 */
+  object-fit:contain;
+}
     #controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px;background:#222;width:100%;}
-    #divider{width:4px;background:#ddd;cursor:col-resize;flex:none;height:100vh;}
-    #shots{width:300px;overflow-y:auto;border-left:1px solid #ccc;padding:8px;display:flex;flex-direction:column;flex:none;height:100vh;}
+    #divider{ width:4px; background:#ddd; cursor:col-resize; flex:none; height:100dvh; }
+    #shots{
+  width:300px; overflow-y:auto; border-left:1px solid #ccc; padding:8px;
+  display:flex; flex-direction:column; flex:none; height:100dvh; min-height:0;
+}
     #toolbar{margin-bottom:8px;text-align:right;}
     #help{font-size:.85rem;margin-bottom:8px;color:#333;}
     #list{display:flex;flex-direction:column;gap:8px;}
