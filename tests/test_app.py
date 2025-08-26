@@ -8,7 +8,7 @@ import sys
 # Ensure the project root is on sys.path when running via the pytest binary
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from EasyAlbumWeb import app, UPLOAD_ROOT
+from EasyReview import app, UPLOAD_ROOT
 
 ALBUM = "test"
 

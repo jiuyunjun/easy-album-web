@@ -73,7 +73,11 @@
   </div>
   <div id='divider'></div>
   <div id='shots'>
-    <div id='toolbar'><button id='delAll' class='btn'>全部删除</button></div>
+    <div id='toolbar'>
+      <button id='delAll' class='btn'>全部删除</button>
+      <button id='autoScene' class='btn' style='display:none'>自动分场景</button>
+    </div>
+    <progress id='sceneProgress' style='display:none;width:100%'></progress>
     <div id='help'>快捷键: F/D/S/A 后退0.5/1/3/5秒，J/K/L/; 前进0.5/1/3/5秒，空格 播放/暂停，回车 保存截图</div>
     <div id='list'></div>
   </div>
@@ -87,6 +91,8 @@ const video=document.getElementById('video');
 const divider=document.getElementById('divider');
 const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
 const shots=document.getElementById('list');
+const autoBtn=document.getElementById('autoScene');
+const progress=document.getElementById('sceneProgress');
 const items=[];
 document.querySelectorAll('#controls [data-seek]').forEach(btn=>btn.addEventListener('click',()=>seek(parseFloat(btn.dataset.seek))));
 const pauseBtn=document.getElementById('pauseBtn');
@@ -99,9 +105,52 @@ document.getElementById('shotBtn').addEventListener('click',capture);
 document.getElementById('delAll').onclick=async()=>{
   if(!confirm('全部删除?'))return;
   await fetch(snapUrl+'/delete_all',{method:'POST'});
-  shots.innerHTML='';
-  refreshItems();
+  await loadShots();
 };
+autoBtn.addEventListener('click',async()=>{
+  if(autoBtn.disabled) return;
+  const val=prompt('请输入分场景阈值(默认27，越大越保守)','27');
+  if(val===null) return;
+  const t=parseFloat(val);
+  const threshold=isNaN(t)?27:t;
+  autoBtn.disabled=true;
+  progress.value=0;progress.max=1;progress.textContent='0%';
+  progress.style.display='block';
+  try{
+    const r=await fetch(snapUrl+'/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({threshold})});
+    const info=await r.json().catch(()=>({}));
+    if(!r.ok||!info.ok) throw new Error(info.msg||'分场景失败');
+  }catch(e){
+    alert(e.message||'分场景失败');
+    progress.style.display='none';
+    autoBtn.disabled=false;
+    return;
+  }
+  const timer=setInterval(async()=>{
+    try{
+      const r=await fetch(snapUrl+'/auto/progress',{cache:'no-store'});
+      const info=await r.json();
+      if(!r.ok){throw new Error();}
+      progress.value=info.progress;
+      progress.textContent=Math.round(info.progress*100)+'%';
+      if(info.done){
+        clearInterval(timer);
+        progress.style.display='none';
+        progress.textContent='';
+        autoBtn.disabled=false;
+        if(!info.ok) alert(info.msg||'分场景失败');
+        else if(!info.saved) alert('未检测到场景');
+        await loadShots();
+      }
+    }catch(e){
+      clearInterval(timer);
+      progress.style.display='none';
+      progress.textContent='';
+      autoBtn.disabled=false;
+      alert('分场景失败');
+    }
+  },500);
+});
 let idx=-1,scale=1,offX=0,offY=0,splitDrag=false;
 function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
 function handleKey(e){
@@ -140,9 +189,12 @@ async function capture(){
   if(info.ok)addShot(info.name,t);
 }
 async function loadShots(){
-  const res=await fetch(snapUrl);
+  const res=await fetch(snapUrl,{cache:'no-store'});
   const arr=await res.json();
+  shots.innerHTML='';
   arr.forEach(s=>addShot(s.name,s.time));
+  if(autoBtn){autoBtn.style.display=arr.length?'none':'';}
+  refreshItems();
 }
 function refreshItems(){items.splice(0,items.length,...document.querySelectorAll('#list img'));}
 function sortShots(){
