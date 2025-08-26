@@ -8,7 +8,7 @@
 3. 视频 Range 流式播放（支持拖动 / 极速加载）。
 """
 
-import os, shutil, hashlib, mimetypes, io, zipfile
+import os, shutil, hashlib, mimetypes, io, zipfile, base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from flask import (
@@ -144,6 +144,11 @@ def thumb_path(album: str, filename: str) -> str:
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, filename + ".jpg")
 
+def snapshot_dir(album: str, filename: str) -> str:
+    d = os.path.join(UPLOAD_ROOT, album, ".review", filename)
+    os.makedirs(d, exist_ok=True)
+    return d
+
 # ---------- Range 流式播放 ----------
 
 def partial_response(path: str, mime: str):
@@ -223,6 +228,105 @@ def preview(album_name, filename):
         except Exception:
             pass
     return send_file(src)
+
+@app.route("/<album_name>/review/<path:filename>")
+def review(album_name, filename):
+    album = safe_album(album_name)
+    if not album:
+        abort(404)
+    fname = sanitize_filename(filename)
+    path = os.path.join(UPLOAD_ROOT, album, fname)
+    if not os.path.isfile(path):
+        abort(404)
+    ext = os.path.splitext(fname)[1].lower()
+    if ext not in VIDEO_EXTS:
+        abort(404)
+    return render_template('review.html', album=album, filename=fname)
+
+@app.route("/<album_name>/review/<path:filename>/snapshots", methods=['GET','POST'])
+def review_snapshots(album_name, filename):
+    album = safe_album(album_name)
+    if not album:
+        abort(404)
+    fname = sanitize_filename(filename)
+    src = os.path.join(UPLOAD_ROOT, album, fname)
+    if not os.path.isfile(src):
+        abort(404)
+    d = snapshot_dir(album, fname)
+    if request.method == 'GET':
+        items = []
+        for n in os.listdir(d):
+            if n.lower().endswith('.jpg'):
+                try:
+                    t = float(os.path.splitext(n)[0])
+                except Exception:
+                    t = 0.0
+                items.append({'name': n, 'time': t})
+        items.sort(key=lambda x: x['time'])
+        return jsonify(items)
+    data = request.get_json(force=True)
+    b64 = data.get('image', '')
+    t = float(data.get('time', 0))
+    if ',' in b64:
+        b64 = b64.split(',', 1)[1]
+    img = base64.b64decode(b64)
+    name = f"{t:.3f}.jpg"
+    with open(os.path.join(d, name), 'wb') as f:
+        f.write(img)
+    return jsonify({'ok': True, 'name': name, 'time': t})
+
+@app.route("/<album_name>/review/<path:filename>/snapshots/<snap_name>")
+def review_snapshot_file(album_name, filename, snap_name):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    snap = sanitize_filename(snap_name)
+    path = os.path.join(snapshot_dir(album, fname), snap)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, mimetype='image/jpeg')
+
+@app.route("/<album_name>/review/<path:filename>/snapshots/<snap_name>/rename", methods=['POST'])
+def review_snapshot_rename(album_name, filename, snap_name):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    snap = sanitize_filename(snap_name)
+    data = request.get_json(force=True)
+    new = sanitize_filename(data.get('name', ''))
+    if not new.lower().endswith('.jpg'):
+        new += '.jpg'
+    d = snapshot_dir(album, fname)
+    src = os.path.join(d, snap)
+    dst = os.path.join(d, new)
+    if not os.path.isfile(src):
+        abort(404)
+    if os.path.isfile(dst):
+        return jsonify({'ok': False, 'msg': 'exists'}), 400
+    os.rename(src, dst)
+    return jsonify({'ok': True, 'name': new})
+
+@app.route("/<album_name>/review/<path:filename>/snapshots/<snap_name>/delete", methods=['POST'])
+def review_snapshot_delete(album_name, filename, snap_name):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    snap = sanitize_filename(snap_name)
+    d = snapshot_dir(album, fname)
+    path = os.path.join(d, snap)
+    if os.path.isfile(path):
+        os.remove(path)
+    return jsonify({'ok': True})
+
+@app.route("/<album_name>/review/<path:filename>/snapshots/delete_all", methods=['POST'])
+def review_snapshot_delete_all(album_name, filename):
+    album = safe_album(album_name)
+    fname = sanitize_filename(filename)
+    d = snapshot_dir(album, fname)
+    for n in os.listdir(d):
+        if n.lower().endswith('.jpg'):
+            try:
+                os.remove(os.path.join(d, n))
+            except FileNotFoundError:
+                pass
+    return jsonify({'ok': True})
 
 @app.route("/<album_name>/download/<path:filename>")
 def download_file_get(album_name, filename):
@@ -366,6 +470,13 @@ def rename_file(album_name):
     tp_new = thumb_path(album, newname)
     if os.path.isfile(tp_old):
         os.rename(tp_old, tp_new)
+    rev_old = os.path.join(UPLOAD_ROOT, album, '.review', old)
+    rev_new = os.path.join(UPLOAD_ROOT, album, '.review', newname)
+    if os.path.isdir(rev_old):
+        try:
+            os.rename(rev_old, rev_new)
+        except OSError:
+            pass
     return jsonify({'ok': True, 'new': newname})
 
 

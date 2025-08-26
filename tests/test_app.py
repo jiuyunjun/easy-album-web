@@ -80,7 +80,10 @@ def test_rename_invalid(client, album_path):
 def test_rename_file(client, album_path):
     data = {"file": (io.BytesIO(b"x"), "old.jpg")}
     client.post(f"/{ALBUM}", data=data, content_type="multipart/form-data")
+    rev = os.path.join(album_path, ".review", "old.jpg")
+    os.makedirs(rev, exist_ok=True)
     resp = client.post(f"/{ALBUM}/rename_file", json={"old": "old.jpg", "new": "new.jpg"})
     assert resp.status_code == 200
     assert os.path.isfile(os.path.join(album_path, "new.jpg"))
+    assert os.path.isdir(os.path.join(album_path, ".review", "new.jpg"))
 

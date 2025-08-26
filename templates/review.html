@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang='zh-CN'>
+<head>
+  <meta charset='utf-8'>
+  <title>{{ filename }} - Review</title>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root{--primary:#1976d2;}
+    body{ margin:0; font-family:system-ui,Arial,sans-serif; display:flex; height:100dvh; }
+    #player{
+  flex:1; display:flex; flex-direction:column;
+  /* 删掉 height:100vh; 让它继承父容器高度 */
+  min-height:0; /* 2) 关键：允许子项在 flex 中被压缩 */
+}
+
+#videoWrap{
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#000; width:100%;
+  min-height:0;     /* 2) 同理，防止被视频控件撑高 */
+  overflow:hidden;  /* 细节：缩放/contain 时不溢出 */
+}
+
+/* 3) 约束 video，不强行 height:100% */
+#video{
+  max-width:100%;
+  max-height:100%;
+  width:100%;
+  height:auto;          /* 关键：让浏览器按比例算高，控件也不会再额外挤出 */
+  object-fit:contain;
+}
+    #controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px;background:#222;width:100%;}
+    #divider{ width:4px; background:#ddd; cursor:col-resize; flex:none; height:100dvh; }
+    #shots{
+  width:300px; overflow-y:auto; border-left:1px solid #ccc; padding:8px;
+  display:flex; flex-direction:column; flex:none; height:100dvh; min-height:0;
+}
+    #toolbar{margin-bottom:8px;text-align:right;}
+    #help{font-size:.85rem;margin-bottom:8px;color:#333;}
+    #list{display:flex;flex-direction:column;gap:8px;}
+    .shot{display:flex;align-items:center;gap:4px;cursor:pointer;}
+    .shot img{width:80px;height:80px;object-fit:contain;background:#000;cursor:pointer;border-radius:4px;}
+    .shot .info{flex:1;display:flex;align-items:center;gap:4px;}
+    .shot .name{flex:1;font-size:.8rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+    .shot .time{font-size:.8rem;}
+    .shot button{margin-left:2px;}
+    button,.btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:.5rem 1rem;cursor:pointer;font:1rem/1.2 system-ui,Arial,sans-serif;}
+    #overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.85);align-items:center;justify-content:center;z-index:999;}
+    #overlay img{max-width:90vw;max-height:90vh;border-radius:6px;transition:transform .2s;}
+    #overlay img.dragging{transition:none;}
+    #overlay .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;font-size:2rem;padding:.5rem;border-radius:50%;cursor:pointer;user-select:none;}
+    #overlay #prev{left:1rem;}
+    #overlay #next{right:1rem;}
+  </style>
+</head>
+<body>
+  <div id='player'>
+    <div id='videoWrap'>
+      <video id='video' src='{{ url_for("stream", album_name=album, filename=filename) }}' controls></video>
+    </div>
+    <div id='controls'>
+      <button class='btn' data-seek='-5'>-5s</button>
+      <button class='btn' data-seek='-3'>-3s</button>
+      <button class='btn' data-seek='-1'>-1s</button>
+      <button class='btn' data-seek='-0.5'>-0.5s</button>
+      <button id='pauseBtn' class='btn'>播放</button>
+      <button id='shotBtn' class='btn'>截图</button>
+      <button class='btn' data-seek='0.5'>+0.5s</button>
+      <button class='btn' data-seek='1'>+1s</button>
+      <button class='btn' data-seek='3'>+3s</button>
+      <button class='btn' data-seek='5'>+5s</button>
+    </div>
+  </div>
+  <div id='divider'></div>
+  <div id='shots'>
+    <div id='toolbar'><button id='delAll' class='btn'>全部删除</button></div>
+    <div id='help'>快捷键: F/D/S/A 后退0.5/1/3/5秒，J/K/L/; 前进0.5/1/3/5秒，空格 播放/暂停，回车 保存截图</div>
+    <div id='list'></div>
+  </div>
+  <div id='overlay'>
+    <button id='prev' class='nav' onclick='event.stopPropagation();prev()'>&lsaquo;</button>
+    <img>
+    <button id='next' class='nav' onclick='event.stopPropagation();next()'>&rsaquo;</button>
+  </div>
+<script>
+const video=document.getElementById('video');
+const divider=document.getElementById('divider');
+const snapUrl='/' + encodeURIComponent('{{ album }}') + '/review/' + encodeURIComponent('{{ filename }}') + '/snapshots';
+const shots=document.getElementById('list');
+const items=[];
+document.querySelectorAll('#controls [data-seek]').forEach(btn=>btn.addEventListener('click',()=>seek(parseFloat(btn.dataset.seek))));
+const pauseBtn=document.getElementById('pauseBtn');
+function updatePause(){pauseBtn.textContent=video.paused?'播放':'暂停';}
+pauseBtn.addEventListener('click',()=>{video.paused?video.play():video.pause();});
+video.addEventListener('play',updatePause);
+video.addEventListener('pause',updatePause);
+updatePause();
+document.getElementById('shotBtn').addEventListener('click',capture);
+document.getElementById('delAll').onclick=async()=>{
+  if(!confirm('全部删除?'))return;
+  await fetch(snapUrl+'/delete_all',{method:'POST'});
+  shots.innerHTML='';
+  refreshItems();
+};
+let idx=-1,scale=1,offX=0,offY=0,splitDrag=false;
+function seek(d){video.currentTime=Math.max(0,video.currentTime+d);}
+function handleKey(e){
+  if(e.target.tagName==='INPUT' && e.target.type==='text')return;
+  e.stopPropagation();
+  const k=e.key.toLowerCase();
+  if(k==='f')seek(-0.5);
+  else if(k==='d')seek(-1);
+  else if(k==='s')seek(-3);
+  else if(k==='a')seek(-5);
+  else if(k==='j')seek(0.5);
+  else if(k==='k')seek(1);
+  else if(k==='l')seek(3);
+  else if(k===';'||k===':')seek(5);
+  else if(e.code==='Space'){e.preventDefault();video.paused?video.play():video.pause();}
+  else if(e.key==='Enter'){e.preventDefault();capture();document.activeElement.blur();}
+}
+document.addEventListener('keydown',handleKey,true);
+divider.addEventListener('mousedown',e=>{splitDrag=true;document.body.style.userSelect='none';e.preventDefault();});
+document.addEventListener('mousemove',e=>{
+  if(!splitDrag)return;
+  const w=window.innerWidth-e.clientX;
+  const min=200,max=window.innerWidth-200;
+  const width=Math.min(Math.max(w,min),max);
+  document.getElementById('shots').style.width=width+'px';
+});
+document.addEventListener('mouseup',()=>{splitDrag=false;document.body.style.userSelect='';});
+async function capture(){
+  const c=document.createElement('canvas');
+  c.width=video.videoWidth;c.height=video.videoHeight;
+  c.getContext('2d').drawImage(video,0,0,c.width,c.height);
+  const data=c.toDataURL('image/jpeg');
+  const t=video.currentTime;
+  const res=await fetch(snapUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:t,image:data})});
+  const info=await res.json();
+  if(info.ok)addShot(info.name,t);
+}
+async function loadShots(){
+  const res=await fetch(snapUrl);
+  const arr=await res.json();
+  arr.forEach(s=>addShot(s.name,s.time));
+}
+function refreshItems(){items.splice(0,items.length,...document.querySelectorAll('#list img'));}
+function sortShots(){
+  [...shots.children].sort((a,b)=>parseFloat(a.querySelector('.time').dataset.t)-parseFloat(b.querySelector('.time').dataset.t)).forEach(n=>shots.appendChild(n));
+  refreshItems();
+}
+async function renameShot(oldName,newName){
+  const r=await fetch(`${snapUrl}/${encodeURIComponent(oldName)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})});
+  const d=await r.json();
+  if(d.ok)return d.name;
+  alert('改名失败');
+  return null;
+}
+function startEdit(span,cb){
+  if(span.dataset.editing)return;
+  span.dataset.editing='1';
+  const old=span.textContent;
+  const input=document.createElement('input');
+  input.type='text';
+  input.value=old;
+  input.style.width='100%';
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish=async(doRename)=>{
+    input.replaceWith(span);
+    span.dataset.editing='';
+    const val=input.value.trim();
+    if(doRename&&val&&val!==old){
+      await cb(old,val);
+    }else{
+      span.textContent=old;
+    }
+  };
+  input.addEventListener('blur',()=>finish(true));
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){input.blur();}
+    else if(e.key==='Escape'){input.value=old;finish(false);}
+  });
+}
+function addShot(name,time){
+  let currentName=name;
+  const div=document.createElement('div');div.className='shot';
+  const img=document.createElement('img');
+  img.src=`${snapUrl}/${currentName}`;
+  img.dataset.full=img.src;
+  img.addEventListener('click',e=>{e.stopPropagation();showImage(img);});
+
+  const info=document.createElement('div');info.className='info';
+  const nameSpan=document.createElement('span');nameSpan.className='name';nameSpan.textContent=currentName;
+  nameSpan.addEventListener('click',e=>{
+    e.stopPropagation();
+    startEdit(nameSpan,async(old,val)=>{
+      const nn=await renameShot(currentName,val);
+      if(nn){currentName=nn;nameSpan.textContent=nn;img.src=`${snapUrl}/${currentName}`;img.dataset.full=img.src;}
+    });
+  });
+  const timeSpan=document.createElement('span');timeSpan.className='time';timeSpan.dataset.t=time;timeSpan.textContent=time.toFixed(2)+'s';
+  info.append(nameSpan,timeSpan);
+
+  const del=document.createElement('button');
+  del.className='btn';
+  del.textContent='删除';
+  del.addEventListener('click',async e=>{
+    e.stopPropagation();
+    if(!confirm('删除?'))return;
+    await fetch(`${snapUrl}/${encodeURIComponent(currentName)}/delete`,{method:'POST'});
+    div.remove();
+    refreshItems();
+  });
+
+  div.addEventListener('click',e=>{
+    if(e.target===nameSpan||e.target===del||e.target.tagName==='INPUT')return;
+    video.currentTime=time;
+  });
+
+  div.append(img,info,del);
+  shots.appendChild(div);
+  sortShots();
+}
+function showAt(i){
+  if(i<0||i>=items.length)return;
+  idx=i;scale=1;offX=0;offY=0;
+  const o=document.getElementById('overlay');
+  const img=o.querySelector('img');
+  img.src=items[i].dataset.full;
+  o.style.display='flex';
+  updateTransform();
+}
+function showImage(el){showAt(items.indexOf(el));}
+function hide(){const o=document.getElementById('overlay');o.style.display='none';idx=-1;}
+function next(){if(idx<items.length-1)showAt(idx+1);}
+function prev(){if(idx>0)showAt(idx-1);}
+function updateTransform(){const img=document.querySelector('#overlay img');img.style.transform=`translate(${offX}px,${offY}px) scale(${scale})`;}
+document.addEventListener('keydown',e=>{const o=document.getElementById('overlay');if(o.style.display!=='flex')return;if(e.key==='ArrowRight'){next();e.preventDefault();}else if(e.key==='ArrowLeft'){prev();e.preventDefault();}});
+const overlay=document.getElementById('overlay');
+const imgEl=document.querySelector('#overlay img');
+let dragging=false,lastX=0,lastY=0;
+imgEl.addEventListener('mousedown',e=>{if(e.button!==0)return;dragging=true;imgEl.classList.add('dragging');lastX=e.clientX;lastY=e.clientY;e.preventDefault();e.stopPropagation();});
+imgEl.addEventListener('click',e=>e.stopPropagation());
+overlay.addEventListener('click',e=>{if(e.target===overlay)hide();});
+document.addEventListener('mousemove',e=>{if(!dragging)return;offX+=e.clientX-lastX;offY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;updateTransform();});
+document.addEventListener('mouseup',()=>{dragging=false;imgEl.classList.remove('dragging');});
+overlay.addEventListener('wheel',e=>{e.preventDefault();const rect=imgEl.getBoundingClientRect();const cx=e.clientX-(rect.left+rect.width/2);const cy=e.clientY-(rect.top+rect.height/2);const old=scale;scale+=e.deltaY<0?0.1:-0.1;scale=Math.min(Math.max(scale,1),5);const ratio=scale/old;offX-=cx*(ratio-1);offY-=cy*(ratio-1);updateTransform();},{passive:false});
+loadShots();
+</script>
+</body>
+</html>
