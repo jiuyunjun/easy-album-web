@@ -470,6 +470,13 @@ def rename_file(album_name):
     tp_new = thumb_path(album, newname)
     if os.path.isfile(tp_old):
         os.rename(tp_old, tp_new)
+    rev_old = os.path.join(UPLOAD_ROOT, album, '.review', old)
+    rev_new = os.path.join(UPLOAD_ROOT, album, '.review', newname)
+    if os.path.isdir(rev_old):
+        try:
+            os.rename(rev_old, rev_new)
+        except OSError:
+            pass
     return jsonify({'ok': True, 'new': newname})
 
 
